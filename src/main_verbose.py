@@ -124,6 +124,11 @@ def _report_results(results: list[Any]) -> int:
     return 1 if failed else 0
 
 
+def _logs_enabled(args: Any, run_mode: str) -> bool:
+    """Run logs are opt-in (-l/--logs) and standalone-only."""
+    return bool(getattr(args, "logs", False)) and run_mode == "standalone"
+
+
 def _execute_pipeline(
     markdown_files: list[Markdown],
     engine: Any,
@@ -131,6 +136,7 @@ def _execute_pipeline(
     profile: dict[str, Any],
     output_dir: Path,
     input_root: Path | None = None,
+    logs: bool = False,
 ) -> int:
     """Run the core generation pipeline: build inputs → run → report → log."""
     from rich.progress import (
@@ -163,7 +169,7 @@ def _execute_pipeline(
             if getattr(msg, "level", "") == "error":
                 logger.error(text)
             payload = getattr(msg, "api_payload", None)
-            if payload is not None:
+            if logs and payload is not None:
                 log_file_only(f"Payload: {payload}")
 
         original = engine._on_progress
@@ -179,7 +185,8 @@ def _execute_pipeline(
         for r in results
         if r.status == "ok" and getattr(r, "path", None)
     ]
-    write_run_logs(generated, output_dir)
+    if logs:
+        write_run_logs(generated, output_dir)
     return exit_code
 
 
@@ -206,7 +213,9 @@ def _resolve_engine_for_studiolot(
 def main() -> int:
     args = parse_args()
     is_studiolot = bool(args.profile or args.input_dir or args.output_dir)
-    start_output_capture()
+    run_mode = "studiolot" if is_studiolot else "standalone"
+    if _logs_enabled(args, run_mode):
+        start_output_capture()
     setup_logging(debug=args.debug, verbose=args.verbose)
 
     logger.debug("=" * 60)
@@ -272,7 +281,9 @@ def _run_studiolot(args) -> int:
     api_key = get_api_key(platform)
     engine = _resolve_engine_for_studiolot(output_dir, platform, profile, api_key)
 
-    return _execute_pipeline(markdown_files, engine, platform, profile, output_dir, input_dir)
+    return _execute_pipeline(
+        markdown_files, engine, platform, profile, output_dir, input_dir, logs=False
+    )
 
 
 def _run_standalone(args) -> int:
@@ -342,7 +353,15 @@ def _run_standalone(args) -> int:
         make_engine_ctx(platform, search_paths, profile, output_dir, api_key)
     )
 
-    return _execute_pipeline(markdown_files, engine, platform, profile, output_dir, input_path)
+    return _execute_pipeline(
+        markdown_files,
+        engine,
+        platform,
+        profile,
+        output_dir,
+        input_path,
+        logs=_logs_enabled(args, "standalone"),
+    )
 
 
 if __name__ == "__main__":

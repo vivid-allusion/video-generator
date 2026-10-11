@@ -1,7 +1,8 @@
 """Markdown-file parsing for video generation.
 
 Parses Markdown `.md` files and extracts:
-- Text prompt from the first non-empty, non-image line
+- Text prompt from the first non-empty line that is not a whole-line media
+  embed
 - Reference URLs from markdown ![alt](URL) syntax — empty alt, the primary
   slot name, or an unknown alt feeds the primary slot; a declared named alt
   feeds the named slot
@@ -16,6 +17,10 @@ A trailing `---`-fenced YAML block whose root key is `studio:` is the IDE's
 cull-marks metadata. It is skipped whole — never a prompt, never a URL, never a
 warning — before any line is inspected. Detection is structural (fence + root
 key), so malformed YAML inside the block is skipped rather than raising.
+
+A leading whole-line media embed — image or video, any target — is the
+previous generation kept by tooling as a visual bookmark: it is skipped whole
+(never the prompt, never a reference). References stay below the prompt.
 
 Format:
     Line 1: Text prompt
@@ -40,6 +45,10 @@ _FRAMES_RE = re.compile(r"^frames:\s*(\d+)", re.IGNORECASE)
 _DURATION_RE = re.compile(r"^duration:\s*(\S+)", re.IGNORECASE)
 
 _IMG_URL_PATTERN = re.compile(r"!\[([^\]]*)\]\((https?://[^\)]+)\)")
+# A whole line that is nothing but a markdown media embed (image or video),
+# any target — the previous-generation bookmark tooling writes above the
+# prompt. A leading one is neither prompt nor media.
+_MD_MEDIA_LINE = re.compile(r"!\[.*?\]\([^\s()]*(?:\([^\s()]*\)[^\s()]*)*\)")
 _LINK_WITHOUT_BANG = re.compile(r"(?<!!)\[.*?\]\((https?://[^\)]+)\)")
 _BANG_SPACE_PATTERN = re.compile(r"! +\[.*?\]\(.*?\)")
 _PAREN_SPACE_PATTERN = re.compile(r"!\[.*?\] +\(.*?\)")
@@ -195,6 +204,9 @@ def parse_markdown(
 ) -> tuple[str, list[str], int | None, int | str | None, dict[str, list[str]]]:
     """Parse a .md Markdown file, returning (prompt, urls, frames, duration, references).
 
+    A leading whole-line media embed (the previous-generation bookmark) is
+    ignored — the prompt is the first non-embed text line.
+
     Raises:
         ValueError: If no prompt found.
     """
@@ -214,17 +226,10 @@ def parse_markdown(
             continue
 
         if not seen_prompt:
-            first_match = _IMG_URL_PATTERN.search(line)
-            if first_match:
-                _route_image(
-                    first_match.group(1),
-                    first_match.group(2),
-                    urls,
-                    references,
-                    declared_slots,
-                    primary_slot,
-                    warn,
-                )
+            if _MD_MEDIA_LINE.fullmatch(stripped):
+                # A leading media embed (image or video, e.g. the previous
+                # generation kept as a bookmark) is ignored — the prompt is
+                # the first non-embed text line; references stay below it.
                 continue
             prompt = stripped
             seen_prompt = True

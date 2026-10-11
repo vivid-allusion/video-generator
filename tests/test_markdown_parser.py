@@ -26,11 +26,19 @@ class TestParseMarkdown:
         prompt, _, _, _, _ = parse_markdown(content)
         assert prompt == "Hello world"
 
-    def test_image_first_line_is_not_prompt(self):
-        content = "![start](https://x.com/a.jpg)\nA real prompt"
+    def test_leading_media_embed_is_ignored_bookmark(self):
+        content = "![generated](../05.OUTPUT/prev.mp4)\nA real prompt"
         prompt, urls, _, _, _ = parse_markdown(content)
         assert prompt == "A real prompt"
-        assert urls == ["https://x.com/a.jpg"]
+        assert urls == []
+
+    def test_remote_leading_embed_is_ignored_bookmark(self):
+        content = (
+            "![start](https://x.com/a.jpg)\nA real prompt\n![ref](https://x.com/ref.jpg)"
+        )
+        prompt, urls, _, _, _ = parse_markdown(content)
+        assert prompt == "A real prompt"
+        assert urls == ["https://x.com/ref.jpg"]
 
     def test_empty_content_raises(self):
         with pytest.raises(ValueError, match="No prompt"):

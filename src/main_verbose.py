@@ -9,6 +9,7 @@ from the profile YAML's parameters block.
 
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,7 @@ from .utils.logging import (
     log_file_only,
     setup_logging,
     start_output_capture,
+    write_error_log,
     write_run_logs,
 )
 from .utils.path_resolver import (
@@ -136,6 +138,32 @@ def _logs_enabled(args: Any, run_mode: str) -> bool:
     return bool(getattr(args, "logs", False)) and run_mode == "standalone"
 
 
+def _write_run_error_log(
+    output_dir: Path,
+    run_mode: str,
+    profile: dict[str, Any],
+    input_root: Path | None,
+    *,
+    results: list[Any] | None = None,
+    traceback_text: str | None = None,
+) -> Path | None:
+    """Write the run-level ERROR log; a log failure never masks the real one."""
+    try:
+        log_path = write_error_log(
+            output_dir,
+            run_mode=run_mode,
+            profile_path=profile.get("profile_path"),
+            input_root=input_root,
+            results=results,
+            traceback_text=traceback_text,
+        )
+    except Exception as exc:
+        logger.error(f"Could not write the run-level ERROR log: {exc}")
+        return None
+    logger.error(f"Run-level ERROR log: {log_path}")
+    return log_path
+
+
 def _execute_pipeline(
     markdown_files: list[Markdown],
     engine: Any,
@@ -144,8 +172,14 @@ def _execute_pipeline(
     output_dir: Path,
     input_root: Path | None = None,
     logs: bool = False,
+    run_mode: str = "standalone",
 ) -> int:
-    """Run the core generation pipeline: build inputs → run → report → log."""
+    """Run the core generation pipeline: build inputs → run → report → log.
+
+    A run that ends with at least one failed item — or raises out of
+    `engine.run()` — always writes a run-level `_ERROR.log`, independent of
+    the opt-in `--logs` state. Parse/preflight rejections never reach here.
+    """
     from rich.progress import (
         BarColumn,
         Progress,
@@ -183,10 +217,21 @@ def _execute_pipeline(
         engine._on_progress = on_progress
         try:
             results = engine.run(inputs)
+        except Exception:
+            _write_run_error_log(
+                output_dir,
+                run_mode,
+                profile,
+                input_root,
+                traceback_text=traceback.format_exc(),
+            )
+            raise
         finally:
             engine._on_progress = original
 
     exit_code = _report_results(results)
+    if any(getattr(r, "status", "") == "error" for r in results):
+        _write_run_error_log(output_dir, run_mode, profile, input_root, results=results)
     generated = [
         r.path
         for r in results
@@ -292,7 +337,14 @@ def _run_studiolot(args) -> int:
     engine = _resolve_engine_for_studiolot(output_dir, platform, profile, api_key)
 
     return _execute_pipeline(
-        markdown_files, engine, platform, profile, output_dir, input_dir, logs=False
+        markdown_files,
+        engine,
+        platform,
+        profile,
+        output_dir,
+        input_dir,
+        logs=False,
+        run_mode="studiolot",
     )
 
 
@@ -371,6 +423,7 @@ def _run_standalone(args) -> int:
         output_dir,
         input_path,
         logs=_logs_enabled(args, "standalone"),
+        run_mode="standalone",
     )
 
 

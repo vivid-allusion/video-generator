@@ -12,6 +12,12 @@
 
 - MUST: Report errors with full context to the user
 - MUST: Continue processing other items when individual items fail
+- MUST: Write a verbose error log on ANY generation failure, regardless of
+  logging flags — the engine writes a per-item `<base>-<idx>_ERROR.log`
+  beside the would-be output (named on the result as `metadata["error_log"]`);
+  the vehicle writes one run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log`
+  per failed run (run mode, profile path, input root, counts, per-item
+  failures, traceback) — parse/preflight rejections never write one
 - SHOULD: Suggest solutions when errors occur
 - SHOULD: Validate inputs before processing
 - SHOULD NOT: Silently ignore errors or warnings
@@ -123,6 +129,9 @@ relative_dir}`) → rich `Progress` spinner wrapping `engine._on_progress`
 (in-place task description, restored in finally) → `engine.run(inputs)` →
 `_report_results()` → `write_run_logs()` writes `<file>.log` beside every
 generated video (fallback `video_generator_<ts>.log` when nothing generated).
+A run that ends with ≥1 failed item — or raises out of `engine.run()` — always
+writes a run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log` via
+`write_error_log()`, independent of `--logs`.
 
 ### Video-Specific Input
 - Prompt: a plain first line, or a ```prompt fence (every line to the closing
@@ -186,7 +195,7 @@ generated video (fallback `video_generator_<ts>.log` when nothing generated).
 | `src/processing/markdown_parser.py` | `read_markdown()`, `parse_markdown()`, `validate_image_urls()` — prompt (plain line or ```prompt fence) + URLs (`img`/`ref` alt aliases) + `frames:` + `duration:` (or ```duration fence; parsed raw, clamped at build time) + alt-text named slots + `declared_slots` validation, primary/`reference_images` mix rejection, `[]` on empty dir, markdown format warnings, HEAD validation skipped on dry-run (Q15) |
 | `src/processing/profiles.py` | `load_profile_standalone()` (no STANDBY fallback), `load_profile_studiolot()`, `normalize_legacy_profile()` (`image_url` → `image_url_param`), `activate_profile()` |
 | `src/processing/first_run.py` | `handle_first_run()` — engine check, TTY wizard, auto-install, STANDBY seed; never touches 03.PROFILES/ (Q2 removed), non-TTY guidance |
-| `src/utils/logging.py` | loguru + `_TeeStream` capture (encoding is a property) + `write_run_logs()` |
+| `src/utils/logging.py` | loguru + `_TeeStream` capture (encoding is a property) + `write_run_logs()` + `write_error_log()` (run-level `<YYMMDD_HHMMSS>_ERROR.log` on failed runs) |
 | `src/utils/path_resolver.py` | Timestamped output dirs `<YYMMDD_HHMMSS>_VID` (Q14) |
 
 ## Configuration

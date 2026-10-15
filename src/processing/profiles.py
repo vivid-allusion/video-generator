@@ -16,6 +16,7 @@ def _parse_profile_yaml(yaml_path: Path) -> dict[str, Any]:
     """Load and annotate a profile YAML file."""
     data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
     data["profile_name"] = yaml_path.stem
+    data["profile_path"] = str(yaml_path)
     return data
 
 

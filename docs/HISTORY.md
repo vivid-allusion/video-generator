@@ -10,6 +10,29 @@
 
 ## Session History
 
+### 2026-10-15 — Failure logs are always written (per item + per run)
+- Engine (`engine-replicate`): every per-item failure — provider exception,
+  empty-prompt skip, "no output returned", save/download failure — now writes a
+  verbose `<base>-<idx>_ERROR.log` beside the would-be output (same
+  `_output_stem` base, item's destination dir, created if missing), independent
+  of any logging flag; the error result names it as `metadata["error_log"]`.
+  Content: when / item / source / dest dir / expected / platform / endpoint /
+  profile JSON / duration raw+effective+fps / media (primary + every slot) /
+  exact final prompt / error stage (`build_input` | `provider_call` | `save` |
+  `no_output` | `empty_prompt`) / error / full traceback / API payload JSON /
+  note — key-like values masked, no environment dumps.
+- Vehicle: `_execute_pipeline()` writes a run-level
+  `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log` (`write_error_log()`) when a run ends
+  with ≥1 failed item or when `engine.run()` raises (full traceback captured,
+  then re-raised). Content: tool + `__version__`, run mode, profile path, input
+  root, ok/failed counts, one `failed:` line per item naming its per-item log.
+  Parse/preflight rejections write nothing (no generation attempted);
+  `_parse_profile_yaml()` now annotates `profile_path` for the log.
+- Tests: engine `TestErrorLog` (provider / no-output / save / empty-prompt,
+  masking, missing dest dir, no log on success) + vehicle run-level cases
+  (failed item, raising run re-raises, preflight no-log). Suites green: engine
+  104, vehicle 161; ruff clean.
+
 ### 2026-10-15 — `ref` alias follows the profile's reference-image slot
 - `![ref]` routes to whichever reference-image slot the active profile
   declares — `reference_images` (Seedance 2.5) or `reference_image_urls`

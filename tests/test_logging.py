@@ -12,8 +12,9 @@ import pytest
 
 from src import main_verbose
 from src.cli import parse_args
+from src.exceptions import ValidationError
 from src.main_verbose import _execute_pipeline, _logs_enabled
-from src.utils.logging import start_output_capture
+from src.utils.logging import start_output_capture, write_error_log
 
 
 @pytest.fixture(autouse=True)
@@ -189,3 +190,123 @@ class TestLogsFlag:
 
         assert main_verbose._run_studiolot(args) == 0
         assert captured["logs"] is False
+
+
+class FailingStubEngine(StubEngine):
+    """One ok item plus one failed item carrying its per-item error-log path."""
+
+    def run(self, inputs: list) -> list[SimpleNamespace]:
+        results = super().run(inputs)
+        results.append(
+            SimpleNamespace(
+                status="error",
+                source_path=Path("in/bad.md"),
+                path=None,
+                error_msg="RuntimeError: API timeout",
+                metadata={"error_log": "/out/999999_000000-0_ERROR.log"},
+            )
+        )
+        return results
+
+
+def test_failed_item_writes_run_level_error_log(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _install_stub_engine_module(monkeypatch)
+    engine = FailingStubEngine(tmp_path)
+
+    exit_code = _execute_pipeline(
+        [_md("in/a.md")],
+        engine,
+        "replicate",
+        _profile(),
+        tmp_path,
+        Path("in"),
+        logs=False,
+    )
+
+    assert exit_code == 1
+    error_logs = list(tmp_path.glob("*_ERROR.log"))
+    assert len(error_logs) == 1
+    content = error_logs[0].read_text(encoding="utf-8")
+    assert "Video Generator v" in content
+    assert "run mode: standalone" in content
+    assert "profile: /profiles/test.yaml" in content
+    assert "input root: in" in content
+    assert "counts: 1 ok, 1 failed" in content
+    assert (
+        "failed: bad.md — RuntimeError: API timeout "
+        "(error log: /out/999999_000000-0_ERROR.log)" in content
+    )
+    # The opt-in per-file run log stays off; only the ERROR log is written.
+    plain_logs = [p for p in tmp_path.glob("*.log") if p.name != error_logs[0].name]
+    assert [p for p in plain_logs if not p.name.endswith("_ERROR.log")] == []
+
+
+def test_raising_engine_writes_run_level_error_log_and_reraises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class RaisingEngine(StubEngine):
+        def run(self, inputs: list) -> list[SimpleNamespace]:
+            raise RuntimeError("provider exploded")
+
+    _install_stub_engine_module(monkeypatch)
+    engine = RaisingEngine(tmp_path)
+
+    with pytest.raises(RuntimeError, match="provider exploded"):
+        _execute_pipeline(
+            [_md("in/a.md")],
+            engine,
+            "replicate",
+            _profile(),
+            tmp_path,
+            Path("in"),
+            logs=False,
+        )
+
+    error_logs = list(tmp_path.glob("*_ERROR.log"))
+    assert len(error_logs) == 1
+    content = error_logs[0].read_text(encoding="utf-8")
+    assert "run mode: standalone" in content
+    assert "counts: 0 ok, 0 failed" in content
+    assert "Traceback (most recent call last):" in content
+    assert "RuntimeError: provider exploded" in content
+
+
+def test_write_error_log_names_file_with_timestamp(tmp_path: Path) -> None:
+    log_path = write_error_log(
+        tmp_path,
+        run_mode="studiolot",
+        profile_path="p.yaml",
+        input_root=tmp_path,
+    )
+    assert log_path.parent == tmp_path
+    stamp = log_path.name.removesuffix("_ERROR.log")
+    assert len(stamp) == 13
+    assert stamp[:6].isdigit() and stamp[7:13].isdigit()
+    assert stamp[6] == "_"
+
+
+def test_preflight_rejection_writes_no_error_log(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A parse/preflight rejection never reaches a generation attempt."""
+    (tmp_path / "rejected.md").write_text("prompt", encoding="utf-8")
+    monkeypatch.setattr(main_verbose, "load_profile_studiolot", lambda _path: _profile())
+    monkeypatch.setattr(main_verbose, "read_markdown", lambda *a, **k: [])
+
+    args = SimpleNamespace(
+        profile="p.yaml",
+        input_dir=str(tmp_path),
+        output_dir=str(tmp_path),
+        platform=None,
+        dry_run=False,
+        cost_estimation=False,
+        save_payloads=True,
+        install_default_engine=None,
+        logs=True,
+    )
+
+    with pytest.raises(ValidationError):
+        main_verbose._run_studiolot(args)
+    assert list(tmp_path.glob("*_ERROR.log")) == []

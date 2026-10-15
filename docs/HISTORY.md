@@ -10,6 +10,46 @@
 
 ## Session History
 
+### 2026-10-15 — Studiolot mode: generator-ENGINES fallback
+- `_resolve_engine_for_studiolot()` no longer hard-fails when the output tree
+  has no `00_APPLICATIONS/ENGINES/`: it falls back to the generator's own
+  `ENGINES/` (logged, not silent). This lets `--profile/--input_dir/--output_dir`
+  runs target project folders outside the studiolot layout (e.g. the film
+  workspace) without touching `USER-FILES/04.INPUT/`.
+- Tests: `tests/test_engine_resolution.py` (2 cases); suite 155 green.
+
+### 2026-10-15 — Fenced prompt/duration shapes + duration bounds (Seedance 21:9 · 480p)
+- Markdown parser supports the film project's fenced shape next to the legacy one:
+  a ```prompt fence (every line up to the closing fence becomes the prompt,
+  newlines kept) and a ```duration fence (first non-empty line = raw duration,
+  same coercion as `duration:`); fence content is never scanned for media or
+  metadata and raises no format warnings. A fence that is never closed consumes
+  the rest of the file (with a warning). Legacy first-line prompt + `duration:`
+  lines, the leading Shape-1 render embed, and the trailing `studio:` block are
+  unchanged.
+- Alt aliases: `img` → primary slot (silent), `ref` → the declared
+  `reference_images` slot (undeclared → warn + primary). A bullet ending up with
+  both a primary URL (`img`) and `reference_images` URLs (`ref`) is rejected at
+  parse time — bytedance/seedance-2.5 cannot combine `image` with
+  `reference_images`.
+- Duration bounds (vehicle side only): `build_inputs()` clamps the effective
+  numeric duration (bullet `duration:` → frames/fps → profile default) into the
+  profile's top-level `duration_min`/`duration_max`; `-1` and tokens (`auto`)
+  pass through verbatim — duration is now passed "verbatim within profile
+  bounds". `_markdown_duration()` (cost estimation) applies the same clamp so
+  estimates match the run. Note: a legacy profile carrying the old default-duration
+  `duration_min`/`duration_max` keys now also bounds durations; the
+  `normalize_legacy_profile()` `duration_min` → `parameters.duration` mapping is
+  unchanged.
+- Active profile renamed `USER-FILES/03.PROFILES/seedance-2.5_16x9_720p_5s.yaml`
+  → `..._21x9_480p_5s.yaml` (values were already 21:9 · 480p), gains
+  `duration_min: 4` / `duration_max: 30`, and `pricing.cost_per_second` 0.23 →
+  0.10 (true 480p price; engine TOML note: $0.10/sec at 480p vs $0.23 at 720p).
+  Slots and `generate_audio: false` unchanged.
+- Docs: AGENTS.md duration wording → "verbatim within profile bounds".
+- Tests: 153 green (was 110) with the new fence/alias/clamp cases;
+  `python -m pytest tests/ -v`; ruff + black clean.
+
 ### 2026-10-01 — W98: Camera-movement presets + `reference_images` merge (cross-repo)
 - Six Owner-scoped camera presets (Dolly in/out/left/right, Handheld, Orbit) ship
   as studiolot's bundled **video** defaults: `media_type = "video"`,
@@ -196,8 +236,9 @@
   bullet when the profile declares `slots:` (Q9), no schema → primary fallback;
   `read_bullets(declared_slots=...)` wired from both run modes
 - `Bullet` TypedDict gains raw `duration` + `references`; `build_inputs()`
-  passes duration verbatim into metadata and `references` only to engines
-  that accept the field — loud warning for old-datatype engines (Q20)
+  passes duration verbatim within profile bounds into metadata and `references`
+  only to engines that accept the field — loud warning for old-datatype
+  engines (Q20)
 - `normalize_legacy_profile()`: `image_url` → `image_url_param`; profile
   carries slot schema via `slots:`/`required_slots:` + `duration_param_name`
   (Q17 — no runtime TOML lookup; engine TOML `[general]` slots are Part-3
@@ -317,8 +358,8 @@
   (AISL side — see session history)
 
 ### Resolved (Part 2)
-- Video bullets now carry `duration:` (verbatim) + named alt slots; payload
-  slot routing + duration override live in engine-replicate
+- Video bullets now carry `duration:` (verbatim within profile bounds) + named
+  alt slots; payload slot routing + duration override live in engine-replicate
 - Cost estimation breaks on token durations: fixed via profile-default
   fallback (Q18)
 - Old engines silently dropped named slots: now a loud warning (Q20)

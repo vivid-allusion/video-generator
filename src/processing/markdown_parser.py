@@ -1,13 +1,22 @@
 """Markdown-file parsing for video generation.
 
 Parses Markdown `.md` files and extracts:
-- Text prompt from the first non-empty line that is not a whole-line media
-  embed
+- Text prompt: a plain first line, or the content of a ```prompt fence — every
+  line up to the closing ``` becomes the prompt, newlines kept
 - Reference URLs from markdown ![alt](URL) syntax — empty alt, the primary
   slot name, or an unknown alt feeds the primary slot; a declared named alt
-  feeds the named slot
+  feeds the named slot. `img` is a primary alias (never warns); `ref` is an
+  alias for the `reference_images` slot
 - Optional frame count from a `frames: N` line (deprecated, converted via fps)
-- Optional raw duration from a `duration: <int|token>` line (verbatim)
+- Optional raw duration from a `duration: <int|token>` line, or from the
+  first non-empty line inside a ```duration fence (same coercion)
+
+A bullet carrying BOTH a primary URL (e.g. `img`) and `reference_images` URLs
+(e.g. `ref`) is rejected at parse time — the model cannot combine a
+first-frame image with reference images.
+
+Fenced blocks are opaque: lines inside a ```prompt / ```duration fence are
+never scanned for images, metadata, or format warnings.
 
 HTML comments are ignored: anything between <!-- and --> (single-line,
 inline, or spanning multiple lines) is stripped before parsing, so
@@ -23,8 +32,8 @@ previous generation kept by tooling as a visual bookmark: it is skipped whole
 (never the prompt, never a reference). References stay below the prompt.
 
 Format:
-    Line 1: Text prompt
-    Lines 2+: ![alt](URL), frames: N and/or duration: <value>
+    Line 1: Text prompt — a plain line or a ```prompt fence
+    Lines 2+: ![alt](URL), frames: N, duration: <value> and/or a ```duration fence
     (optional) trailing `studio:` marks block
 """
 
@@ -63,7 +72,12 @@ _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _STUDIO_ROOT_RE = re.compile(r"^studio:(\s|$)")
 _FENCE_RE = re.compile(r"^-{3,}$")
 
-_PRIMARY_ALIASES = {"video", "image", "source", "media", "src", "input"}
+_PROMPT_FENCE_OPEN_RE = re.compile(r"^```\s*prompt\s*$", re.IGNORECASE)
+_DURATION_FENCE_OPEN_RE = re.compile(r"^```\s*duration\s*$", re.IGNORECASE)
+_FENCE_CLOSE_RE = re.compile(r"^```\s*$")
+
+_PRIMARY_ALIASES = {"video", "image", "source", "media", "src", "input", "img"}
+_SLOT_ALIASES = {"ref": "reference_images"}
 
 
 def _strip_trailing_studio_block(content: str) -> str:
@@ -158,6 +172,41 @@ def _check_line(line: str, lineno: int, warn: "Callable[[str], None] | None") ->
         )
 
 
+def _fence_content(
+    lines: list[str], open_index: int, warn: "Callable[[str], None] | None" = None
+) -> tuple[list[str], int]:
+    """Return the lines inside a ``` fence and the index just past it.
+
+    The opening fence is at open_index; everything up to the closing ``` line
+    is content. A fence that is never closed consumes the rest of the file
+    (a warning names the unclosed fence).
+    """
+    inner: list[str] = []
+    i = open_index + 1
+    while i < len(lines):
+        if _FENCE_CLOSE_RE.match(lines[i].strip()):
+            return inner, i + 1
+        inner.append(lines[i])
+        i += 1
+    if warn is not None:
+        warn(
+            f"Line {open_index + 1}: unclosed ``` fence — "
+            "treating the rest of the file as its content"
+        )
+    return inner, len(lines)
+
+
+def _prompt_from_fence(inner: list[str]) -> str:
+    """Join a ```prompt fence's lines, keeping newlines; blank padding dropped."""
+    start = 0
+    end = len(inner)
+    while start < end and not inner[start].strip():
+        start += 1
+    while end > start and not inner[end - 1].strip():
+        end -= 1
+    return "\n".join(line.strip() for line in inner[start:end])
+
+
 def _coerce_duration(raw: str) -> int | str:
     """Return int for numeric tokens, the raw string otherwise (verbatim)."""
     try:
@@ -178,21 +227,20 @@ def _route_image(
     """Route a URL: empty/primary/unknown alt → primary; declared alt → named slot.
 
     Unknown alts default to the primary slot (with a warning) instead of
-    erroring the Markdown file. Generic media-kind alts ("video", "image", "source",
-    ...) are treated as primary markers and never warn.
+    erroring the Markdown file. Generic media-kind alts ("video", "image",
+    "img", "source", ...) are treated as primary markers and never warn. `ref`
+    is an alias for the `reference_images` slot.
     """
     alt = alt.strip()
     if not alt or declared_slots is None or alt == primary_slot or alt in _PRIMARY_ALIASES:
         urls.append(url)
         return
-    if alt in declared_slots:
-        references.setdefault(alt, []).append(url)
+    slot = _SLOT_ALIASES.get(alt, alt)
+    if slot in declared_slots:
+        references.setdefault(slot, []).append(url)
         return
     if warn is not None:
-        warn(
-            f"Unknown reference slot '{alt}' — defaulting to primary slot "
-            f"'{primary_slot}'"
-        )
+        warn(f"Unknown reference slot '{slot}' — defaulting to primary slot '{primary_slot}'")
     urls.append(url)
 
 
@@ -205,10 +253,13 @@ def parse_markdown(
     """Parse a .md Markdown file, returning (prompt, urls, frames, duration, references).
 
     A leading whole-line media embed (the previous-generation bookmark) is
-    ignored — the prompt is the first non-embed text line.
+    ignored — the prompt is the first non-embed text line, or the content of a
+    ```prompt fence. Fenced content is opaque: no media/metadata scanning and
+    no format warnings inside a fence.
 
     Raises:
-        ValueError: If no prompt found.
+        ValueError: If no prompt found, or if the bullet combines a primary
+            image with `reference_images` URLs (the model cannot combine them).
     """
     lines = _strip_html_comments(
         _strip_trailing_studio_block(markdown_content), warn
@@ -220,9 +271,12 @@ def parse_markdown(
     references: dict[str, list[str]] = {}
 
     seen_prompt = False
-    for lineno, line in enumerate(lines, start=1):
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         stripped = line.strip()
         if not stripped:
+            i += 1
             continue
 
         if not seen_prompt:
@@ -230,9 +284,24 @@ def parse_markdown(
                 # A leading media embed (image or video, e.g. the previous
                 # generation kept as a bookmark) is ignored — the prompt is
                 # the first non-embed text line; references stay below it.
+                i += 1
+                continue
+            if _PROMPT_FENCE_OPEN_RE.match(stripped):
+                inner, i = _fence_content(lines, i, warn)
+                prompt = _prompt_from_fence(inner)
+                seen_prompt = True
                 continue
             prompt = stripped
             seen_prompt = True
+            i += 1
+            continue
+
+        if _DURATION_FENCE_OPEN_RE.match(stripped):
+            inner, i = _fence_content(lines, i, warn)
+            if duration is None:
+                first = next((ln.strip() for ln in inner if ln.strip()), None)
+                if first is not None:
+                    duration = _coerce_duration(first)
             continue
 
         match = _IMG_URL_PATTERN.search(line)
@@ -247,10 +316,17 @@ def parse_markdown(
             if duration is None:
                 duration = _coerce_duration(duration_match.group(1))
         else:
-            _check_line(line, lineno, warn)
+            _check_line(line, i + 1, warn)
+        i += 1
 
     if not prompt:
         raise ValueError("No prompt text found in markdown")
+
+    if urls and references.get("reference_images"):
+        raise ValueError(
+            "Both a first-frame image (img) and reference_images URLs found — "
+            "the model cannot combine them; keep one or the other"
+        )
 
     return prompt, urls, frames, duration, references
 

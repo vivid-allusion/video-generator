@@ -99,6 +99,29 @@ def auto_install_engine(platform: str, generator_root: Path | None = None) -> bo
     return True
 
 
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def clamp_duration(
+    duration: int | float | str,
+    duration_min: Any = None,
+    duration_max: Any = None,
+) -> int | float | str:
+    """Clamp a non-negative numeric duration into the profile's bounds.
+
+    Negative sentinels (-1) and non-numeric tokens (`auto`) pass through
+    verbatim; a missing or non-numeric bound leaves that side unclamped.
+    """
+    if not _is_number(duration) or duration < 0:
+        return duration
+    if _is_number(duration_min) and duration < duration_min:
+        duration = duration_min
+    if _is_number(duration_max) and duration > duration_max:
+        duration = duration_max
+    return duration
+
+
 def build_inputs(
     markdown_files: list[Markdown],
     platform: str,
@@ -109,7 +132,9 @@ def build_inputs(
 
     metadata carries {duration, fps} per GENERATOR_CONTRACT.md §4d, plus
     relative_dir so outputs mirror the input folder structure. The Markdown file's
-    raw `duration:` (verbatim) wins over `frames:`/profile default.
+    raw `duration:` wins over `frames:`/profile default; an effective numeric
+    duration then clamps into the profile's top-level `duration_min`/`duration_max`
+    (verbatim within profile bounds — negative sentinels and tokens pass through).
     """
     try:
         pkg = importlib.import_module(f"engine_{platform}")
@@ -123,6 +148,8 @@ def build_inputs(
     params = (profile or {}).get("parameters", {})
     fps = int(params.get("fps", 24))
     profile_duration = params.get("duration", 5)
+    duration_min = (profile or {}).get("duration_min")
+    duration_max = (profile or {}).get("duration_max")
 
     preset_refs = list((profile or {}).get("reference_images") or [])
     declared_slots = list((profile or {}).get("slots") or [])
@@ -155,6 +182,7 @@ def build_inputs(
             duration = b["frames"] / fps
         else:
             duration = profile_duration
+        duration = clamp_duration(duration, duration_min, duration_max)
         references = dict(b.get("references") or {})
         reference_urls = list(b["reference_urls"])
         if preset_refs:

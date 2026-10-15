@@ -1,5 +1,5 @@
-"""Tests for build_inputs (verbatim duration, references, Q20 warning)
-and cost-estimation duration fallback (Q18)."""
+"""Tests for build_inputs (verbatim-within-profile-bounds duration, references,
+Q20 warning) and cost-estimation duration fallback (Q18)."""
 
 import types
 from pathlib import Path
@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.engine_helpers import build_inputs
+from src.engine_helpers import build_inputs, clamp_duration
 from src.exceptions import ConfigurationError
 from src.main_verbose import _markdown_duration
 
@@ -55,6 +55,12 @@ def _markdown(**overrides):
 
 PROFILE = {"parameters": {"fps": 24, "duration": 5.0}}
 
+BOUNDED_PROFILE = {
+    "parameters": {"fps": 24, "duration": 5.0},
+    "duration_min": 4,
+    "duration_max": 30,
+}
+
 
 class TestBuildInputsMetadata:
     def test_duration_integer_verbatim(self):
@@ -85,6 +91,80 @@ class TestBuildInputsMetadata:
         with _patched_engine(FakeInputFile):
             inputs = build_inputs([_markdown()], "replicate", profile=PROFILE)
         assert inputs[0].metadata["duration"] == 5.0
+
+
+class TestBuildInputsDurationBounds:
+    """Top-level profile `duration_min`/`duration_max` clamp the effective duration."""
+
+    def test_below_min_clamps_up(self):
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs([_markdown(duration=2)], "replicate", profile=BOUNDED_PROFILE)
+        assert inputs[0].metadata["duration"] == 4
+
+    def test_above_max_clamps_down(self):
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs([_markdown(duration=40)], "replicate", profile=BOUNDED_PROFILE)
+        assert inputs[0].metadata["duration"] == 30
+
+    def test_within_bounds_unchanged(self):
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs([_markdown(duration=5)], "replicate", profile=BOUNDED_PROFILE)
+        assert inputs[0].metadata["duration"] == 5
+
+    def test_token_passes_through_verbatim(self):
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs(
+                [_markdown(duration="auto")], "replicate", profile=BOUNDED_PROFILE
+            )
+        assert inputs[0].metadata["duration"] == "auto"
+
+    def test_negative_sentinel_passes_through_verbatim(self):
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs([_markdown(duration=-1)], "replicate", profile=BOUNDED_PROFILE)
+        assert inputs[0].metadata["duration"] == -1
+
+    def test_no_bounds_leaves_duration_unchanged(self):
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs([_markdown(duration=2)], "replicate", profile=PROFILE)
+        assert inputs[0].metadata["duration"] == 2
+
+    def test_frames_derived_duration_clamped(self):
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs([_markdown(frames=48)], "replicate", profile=BOUNDED_PROFILE)
+        assert inputs[0].metadata["duration"] == 4
+
+    def test_profile_default_clamped(self):
+        profile = {
+            "parameters": {"fps": 24, "duration": 2},
+            "duration_min": 4,
+            "duration_max": 30,
+        }
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs([_markdown()], "replicate", profile=profile)
+        assert inputs[0].metadata["duration"] == 4
+
+    def test_min_only_bound_leaves_high_values(self):
+        profile = {"parameters": {"fps": 24, "duration": 5.0}, "duration_min": 4}
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs([_markdown(duration=40)], "replicate", profile=profile)
+        assert inputs[0].metadata["duration"] == 40
+
+    def test_max_only_bound_leaves_low_values(self):
+        profile = {"parameters": {"fps": 24, "duration": 5.0}, "duration_max": 30}
+        with _patched_engine(FakeInputFile):
+            inputs = build_inputs([_markdown(duration=2)], "replicate", profile=profile)
+        assert inputs[0].metadata["duration"] == 2
+
+
+class TestClampDuration:
+    def test_string_token_passes_through(self):
+        assert clamp_duration("auto", 4, 30) == "auto"
+
+    def test_negative_sentinel_passes_through(self):
+        assert clamp_duration(-1, 4, 30) == -1
+
+    def test_none_bounds_leave_value_unchanged(self):
+        assert clamp_duration(2, None, None) == 2
 
 
 class TestBuildInputsReferences:
@@ -216,3 +296,23 @@ class TestMarkdownDurationCost:
 
     def test_nothing_falls_back_to_profile_default(self):
         assert _markdown_duration(_markdown(), PROFILE) == 5.0
+
+    def test_estimate_clamps_to_min(self):
+        assert _markdown_duration(_markdown(duration=2), BOUNDED_PROFILE) == 4.0
+
+    def test_estimate_clamps_to_max(self):
+        assert _markdown_duration(_markdown(duration=40), BOUNDED_PROFILE) == 30.0
+
+    def test_estimate_within_bounds_unchanged(self):
+        assert _markdown_duration(_markdown(duration=5), BOUNDED_PROFILE) == 5.0
+
+    def test_estimate_no_bounds_unchanged(self):
+        assert _markdown_duration(_markdown(duration=2), PROFILE) == 2.0
+
+    def test_token_fallback_estimate_clamped(self):
+        profile = {
+            "parameters": {"fps": 24, "duration": 5.0},
+            "duration_min": 6,
+            "duration_max": 30,
+        }
+        assert _markdown_duration(_markdown(duration="auto"), profile) == 6.0

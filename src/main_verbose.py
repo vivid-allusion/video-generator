@@ -20,6 +20,8 @@ from .constants import DEFAULT_PLATFORM, __version__
 from .datatypes import Markdown
 from .engine_helpers import (
     build_inputs,
+    clamp_duration,
+    find_generator_engines_dir,
     find_project_engines_dir,
     make_engine_ctx,
 )
@@ -83,17 +85,22 @@ def _apply_cli_overrides(profile: dict[str, Any], args: Any) -> dict[str, Any]:
 
 def _markdown_duration(markdown: Markdown, profile: dict[str, Any]) -> float:
     """Duration for a Markdown file: numeric `duration:` verbatim, else frames via
-    fps, else profile default. Token durations (auto, -1) fall back to the
-    profile default for cost estimation only."""
+    fps, else profile default — then clamped into the profile's top-level
+    `duration_min`/`duration_max` so estimates match what will run. Token
+    durations (auto, -1) fall back to the profile default for cost estimation only."""
     params = profile.get("parameters", {})
     fps = float(params.get("fps", 24))
     profile_duration = float(params.get("duration", 5.0))
     raw = markdown.get("duration")
     if isinstance(raw, (int, float)) and raw > 0:
-        return float(raw)
-    if markdown["frames"]:
-        return markdown["frames"] / fps
-    return profile_duration
+        effective: float = float(raw)
+    elif markdown["frames"]:
+        effective = markdown["frames"] / fps
+    else:
+        effective = profile_duration
+    return float(
+        clamp_duration(effective, profile.get("duration_min"), profile.get("duration_max"))
+    )
 
 
 def _handle_preflight_checks(
@@ -197,13 +204,16 @@ def _resolve_engine_for_studiolot(
     api_key: str | None,
 ) -> Any:
     project_engines = find_project_engines_dir(output_dir)
-    if not project_engines:
-        raise FileNotFoundError(
-            "Engine directory not found. Expected 00_APPLICATIONS/ENGINES/ "
-            "under the project root."
+    if project_engines:
+        search_paths = [project_engines]
+    else:
+        search_paths = [find_generator_engines_dir()]
+        logger.info(
+            "No 00_APPLICATIONS/ENGINES/ under the output tree — using the "
+            "generator's own ENGINES/"
         )
     return load_engine(
-        make_engine_ctx(platform, [project_engines], profile, output_dir, api_key)
+        make_engine_ctx(platform, search_paths, profile, output_dir, api_key)
     )
 
 

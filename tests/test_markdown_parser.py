@@ -228,6 +228,221 @@ class TestParseMarkdown:
             parse_markdown(content)
 
 
+class TestFencedPromptShape:
+    """The ```prompt fence: every line to the closing ```, newlines kept."""
+
+    def test_fenced_single_line_prompt(self):
+        content = "```prompt\nA man walks on the beach.\n```\n![img](https://example.com/frame.jpg)"
+        prompt, urls, frames, duration, references = parse_markdown(content)
+        assert prompt == "A man walks on the beach."
+        assert urls == ["https://example.com/frame.jpg"]
+        assert frames is None
+        assert duration is None
+        assert references == {}
+
+    def test_fenced_multi_line_prompt_keeps_newlines(self):
+        content = "```prompt\nLine one.\nLine two.\n```\n"
+        prompt, *_ = parse_markdown(content)
+        assert prompt == "Line one.\nLine two."
+
+    def test_fenced_prompt_after_shape1_render_bookmark(self):
+        content = (
+            "![260407-abc-1](../../02_RW_GEN_IMG/run/260407-abc-1.png)\n"
+            "\n"
+            "```prompt\n"
+            "A man walks on the beach.\n"
+            "```\n"
+            "![img](https://example.com/frame.jpg)"
+        )
+        prompt, urls, _, _, _ = parse_markdown(content)
+        assert prompt == "A man walks on the beach."
+        assert urls == ["https://example.com/frame.jpg"]
+
+    def test_fenced_prompt_content_is_opaque(self):
+        content = (
+            "```prompt\n"
+            "[not a link](https://example.com/x.jpg)\n"
+            "duration: 99\n"
+            "![ref](https://example.com/ref.jpg)\n"
+            "```\n"
+            "duration: 4\n"
+        )
+        warnings: list[str] = []
+        prompt, urls, frames, duration, references = parse_markdown(
+            content, warn=warnings.append, declared_slots=["reference_images"]
+        )
+        assert prompt == (
+            "[not a link](https://example.com/x.jpg)\n"
+            "duration: 99\n"
+            "![ref](https://example.com/ref.jpg)"
+        )
+        assert urls == []
+        assert frames is None
+        assert duration == 4
+        assert references == {}
+        assert warnings == []
+
+    def test_fenced_prompt_with_ref_line_after(self):
+        content = "```prompt\nA man walks.\n```\n![ref](https://example.com/ref.jpg)\n"
+        prompt, urls, _, _, references = parse_markdown(
+            content, declared_slots=["reference_images"]
+        )
+        assert prompt == "A man walks."
+        assert urls == []
+        assert references == {"reference_images": ["https://example.com/ref.jpg"]}
+
+    def test_fenced_prompt_with_legacy_duration_line(self):
+        content = "```prompt\nA man.\n```\nduration: 6\n"
+        _, _, _, duration, _ = parse_markdown(content)
+        assert duration == 6
+
+    def test_unclosed_prompt_fence_takes_rest_and_warns(self):
+        content = "```prompt\nA man walks.\n![img](https://example.com/frame.jpg)\n"
+        warnings: list[str] = []
+        prompt, urls, _, _, _ = parse_markdown(content, warn=warnings.append)
+        assert prompt == "A man walks.\n![img](https://example.com/frame.jpg)"
+        assert urls == []
+        assert any("unclosed" in w for w in warnings)
+
+    def test_empty_prompt_fence_raises(self):
+        with pytest.raises(ValueError, match="No prompt"):
+            parse_markdown("```prompt\n```\n")
+
+
+class TestFencedDurationShape:
+    """The ```duration fence: first non-empty line inside, same coercion."""
+
+    def test_fenced_duration_integer(self):
+        content = "Prompt\n```duration\n8\n```\n"
+        _, _, _, duration, _ = parse_markdown(content)
+        assert duration == 8
+
+    def test_fenced_duration_token_verbatim(self):
+        content = "Prompt\n```duration\nauto\n```\n"
+        _, _, _, duration, _ = parse_markdown(content)
+        assert duration == "auto"
+
+    def test_fenced_duration_negative_one_is_int(self):
+        content = "Prompt\n```duration\n-1\n```\n"
+        _, _, _, duration, _ = parse_markdown(content)
+        assert duration == -1
+
+    def test_fenced_duration_first_non_empty_line_wins(self):
+        content = "Prompt\n```duration\n\n7\n9\n```\n"
+        _, _, _, duration, _ = parse_markdown(content)
+        assert duration == 7
+
+    def test_fenced_duration_after_fenced_prompt(self):
+        content = "```prompt\nA man.\n```\n```duration\n12\n```\n![img](https://example.com/f.jpg)"
+        prompt, urls, _, duration, _ = parse_markdown(content)
+        assert prompt == "A man."
+        assert duration == 12
+        assert urls == ["https://example.com/f.jpg"]
+
+    def test_fenced_duration_content_is_opaque(self):
+        content = "Prompt\n```duration\n6\n[alt](https://example.com/x.jpg)\n```\n"
+        warnings: list[str] = []
+        _, urls, _, duration, _ = parse_markdown(content, warn=warnings.append)
+        assert duration == 6
+        assert urls == []
+        assert warnings == []
+
+    def test_legacy_duration_line_wins_when_first(self):
+        content = "Prompt\nduration: 3\n```duration\n9\n```\n"
+        _, _, _, duration, _ = parse_markdown(content)
+        assert duration == 3
+
+    def test_unclosed_duration_fence_reads_first_line_and_warns(self):
+        content = "Prompt\n```duration\n4\n"
+        warnings: list[str] = []
+        _, _, _, duration, _ = parse_markdown(content, warn=warnings.append)
+        assert duration == 4
+        assert any("unclosed" in w for w in warnings)
+
+
+class TestImgRefAliases:
+    """`img` → primary (silent); `ref` → reference_images; mixing is rejected."""
+
+    def test_img_alt_routes_to_primary_without_warning(self):
+        content = "Prompt\n![img](https://example.com/frame.jpg)"
+        warnings: list[str] = []
+        _, urls, _, _, references = parse_markdown(
+            content, warn=warnings.append, declared_slots=["reference_images"]
+        )
+        assert urls == ["https://example.com/frame.jpg"]
+        assert references == {}
+        assert warnings == []
+
+    def test_ref_alt_routes_to_reference_images_slot(self):
+        content = "Prompt\n![ref](https://example.com/ref.jpg)"
+        _, urls, _, _, references = parse_markdown(content, declared_slots=["reference_images"])
+        assert urls == []
+        assert references == {"reference_images": ["https://example.com/ref.jpg"]}
+
+    def test_ref_alt_falls_back_to_primary_when_slot_undeclared(self):
+        content = "Prompt\n![ref](https://example.com/ref.jpg)"
+        warnings: list[str] = []
+        _, urls, _, _, references = parse_markdown(
+            content, warn=warnings.append, declared_slots=["audio"]
+        )
+        assert urls == ["https://example.com/ref.jpg"]
+        assert references == {}
+        assert any("defaulting to primary" in w for w in warnings)
+
+    def test_img_and_ref_mix_rejected(self):
+        content = (
+            "Prompt\n![img](https://example.com/frame.jpg)\n![ref](https://example.com/ref.jpg)\n"
+        )
+        with pytest.raises(ValueError, match="reference_images"):
+            parse_markdown(content, declared_slots=["reference_images"])
+
+    def test_img_and_ref_without_declared_slot_no_conflict(self):
+        content = (
+            "Prompt\n![img](https://example.com/frame.jpg)\n![ref](https://example.com/ref.jpg)"
+        )
+        _, urls, _, _, references = parse_markdown(content, declared_slots=["audio"])
+        assert urls == ["https://example.com/frame.jpg", "https://example.com/ref.jpg"]
+        assert references == {}
+
+    def test_mix_rejection_also_for_slot_name_and_primary_alias(self):
+        content = (
+            "Prompt\n"
+            "![image](https://example.com/frame.jpg)\n"
+            "![reference_images](https://example.com/ref.jpg)"
+        )
+        with pytest.raises(ValueError, match="reference_images"):
+            parse_markdown(content, declared_slots=["reference_images"])
+
+    def test_unknown_alt_still_warns_and_goes_primary(self):
+        content = "Prompt\n![foo](https://example.com/x.jpg)"
+        warnings: list[str] = []
+        _, urls, _, _, references = parse_markdown(
+            content, warn=warnings.append, declared_slots=["reference_images"]
+        )
+        assert urls == ["https://example.com/x.jpg"]
+        assert references == {}
+        assert any("Unknown reference slot 'foo'" in w for w in warnings)
+
+    def test_read_markdown_fenced_shapes(self, tmp_path):
+        markdown = tmp_path / "b.md"
+        markdown.write_text(
+            "```prompt\nA man walks.\n```\n```duration\n9\n```\n![img](https://example.com/f.jpg)\n"
+        )
+        markdown_files = read_markdown(tmp_path, dry_run=True)
+        assert len(markdown_files) == 1
+        assert markdown_files[0]["prompt"] == "A man walks."
+        assert markdown_files[0]["duration"] == 9
+        assert markdown_files[0]["reference_urls"] == ["https://example.com/f.jpg"]
+
+    def test_read_markdown_rejects_img_ref_mix(self, tmp_path):
+        (tmp_path / "mix.md").write_text(
+            "Prompt\n![img](https://example.com/frame.jpg)\n![ref](https://example.com/ref.jpg)\n"
+        )
+        (tmp_path / "ok.md").write_text("Good prompt\n")
+        markdown_files = read_markdown(tmp_path, dry_run=True, declared_slots=["reference_images"])
+        assert [m["path"].name for m in markdown_files] == ["ok.md"]
+
+
 class TestStudioMarksBlock:
     """The IDE's trailing `studio:` cull-marks block is skipped whole."""
 

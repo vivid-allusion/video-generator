@@ -113,7 +113,7 @@ main() → _run_studiolot()
   → _handle_preflight_checks()    # before any output_dir.mkdir (Q16)
   → output_dir.mkdir()            # only after preflight passes
   → get_api_key()
-  → find_project_engines_dir()    # walk up from --output_dir
+  → find_project_engines_dir()    # walk up from --output_dir; none → generator's own ENGINES/
   → load_engine()
   → _execute_pipeline()
 ```
@@ -125,23 +125,35 @@ relative_dir}`) → rich `Progress` spinner wrapping `engine._on_progress`
 generated video (fallback `video_generator_<ts>.log` when nothing generated).
 
 ### Video-Specific Input
-- Markdown files carry `frames: N` (deprecated back-compat, converted via fps)
-  and/or `duration: <value>` — raw value parsed verbatim (int or any token
-  like `auto` / `-1`); `duration:` wins over `frames:` (Q8)
+- Prompt: a plain first line, or a ```prompt fence (every line to the closing
+  ``` becomes the prompt, newlines kept; fence content is never scanned for
+  media or metadata)
+- Duration/frames: `frames: N` (deprecated back-compat, converted via fps)
+  and/or `duration: <value>` — a plain line or a ```duration fence — the value
+  verbatim within profile bounds (int or any token like `auto` / `-1`; numeric
+  values clamp into the profile's `duration_min`/`duration_max` at build time,
+  tokens pass through); `duration:` wins over `frames:` (Q8)
 - Named payload slots: `![slot](url)` routes the URL — empty alt, the primary
   slot name (`image_url_param`, e.g. `image`), or an unknown alt all feed the
-  primary slot (unknown alt warns and defaults, no longer errors); a declared
-  named alt (profile `slots:`) feeds that slot; no schema → primary fallback
+  primary slot (unknown alt warns and defaults, no longer errors); `img` is a
+  silent primary alias, `ref` aliases the `reference_images` slot (undeclared →
+  warn + primary); a declared named alt (profile `slots:`) feeds that slot; no
+  schema → primary fallback; a bullet mixing a primary image with
+  `reference_images` URLs is rejected at parse time (the model cannot combine
+  them)
 - `read_markdown(primary_slot=...)` takes the profile's `image_url_param`
   (default `"image"`); both run modes pass it through
-- `build_inputs()` reads `fps` and `duration` from profile `parameters` block
+- `build_inputs()` reads `fps` and `duration` from profile `parameters` block,
+  and the top-level `duration_min`/`duration_max` bounds
 - Each `InputFile.metadata` = `{"duration": int|str|float, "fps": int, "relative_dir": str}`
-  — Markdown-file duration passed VERBATIM (generator never interprets it)
+  — Markdown-file duration passed verbatim within profile bounds (numeric
+  values clamp to `duration_min`/`duration_max`; `-1`/tokens pass through)
 - `InputFile.references` (additive engine field) carries the named-slot map;
   engines still on the old datatype get a loud warning and drop named refs (Q20)
 - `relative_dir` mirrors the Markdown file's folder structure under the output dir
 - Cost estimation: numeric Markdown-file durations used, token durations (`auto`,
-  `-1`) fall back to the profile default (Q18)
+  `-1`) fall back to the profile default (Q18); the same `duration_min`/
+  `duration_max` clamp applies so estimates match the run
 - Legacy profiles with `duration_config`/`image_url` blocks are normalized by
   `normalize_legacy_profile()` (`image_url` → `image_url_param`)
 
@@ -167,10 +179,10 @@ generated video (fallback `video_generator_<ts>.log` when nothing generated).
 | `src/exceptions.py` | `AuthenticationError`, `ConfigurationError`, `ValidationError`, `PreflightExit` |
 | `src/engine_contract.py` | `EngineInputFile` protocol + `validate_input_file()` — fail fast on contract mismatch |
 | `src/engine_loader.py` | Vendored canonical `load_engine()` with `EngineLoadContext`; `copy_standby_profiles(media_type=...)` syncs the engine-owned VID shelf into `02.STANDBY/` on every load |
-| `src/engine_helpers.py` | Discovery (`find_project/generator_engines_dir`), `auto_install_engine` (timeout=300), `build_inputs()` (verbatim duration + references + relative_dir + Q20 old-engine warning), `load_engine_or_install`, `print_engine_not_found` |
+| `src/engine_helpers.py` | Discovery (`find_project/generator_engines_dir`), `auto_install_engine` (timeout=300), `build_inputs()` (verbatim-within-profile-bounds duration + references + relative_dir + Q20 old-engine warning), `clamp_duration()`, `load_engine_or_install`, `print_engine_not_found` |
 | `src/auth/__init__.py` | 4-tier `get_api_key()` (env → pass → .env → AuthenticationError), `SUPPORTED_PLATFORMS`, interactive wizard (`_prompt_platform`, `_offer_engine_install`, `_prompt_and_save_key` → repo-root `.env`) |
 | `src/auth/env.py` | `.env` loading (`get_api_token_from_env`) |
-| `src/processing/markdown_parser.py` | `read_markdown()`, `parse_markdown()`, `validate_image_urls()` — prompt + URLs + `frames:` + `duration:` (verbatim) + alt-text named slots + `declared_slots` validation, `[]` on empty dir, markdown format warnings, HEAD validation skipped on dry-run (Q15) |
+| `src/processing/markdown_parser.py` | `read_markdown()`, `parse_markdown()`, `validate_image_urls()` — prompt (plain line or ```prompt fence) + URLs (`img`/`ref` alt aliases) + `frames:` + `duration:` (or ```duration fence; parsed raw, clamped at build time) + alt-text named slots + `declared_slots` validation, primary/`reference_images` mix rejection, `[]` on empty dir, markdown format warnings, HEAD validation skipped on dry-run (Q15) |
 | `src/processing/profiles.py` | `load_profile_standalone()` (no STANDBY fallback), `load_profile_studiolot()`, `normalize_legacy_profile()` (`image_url` → `image_url_param`), `activate_profile()` |
 | `src/processing/first_run.py` | `handle_first_run()` — engine check, TTY wizard, auto-install, STANDBY seed; never touches 03.PROFILES/ (Q2 removed), non-TTY guidance |
 | `src/utils/logging.py` | loguru + `_TeeStream` capture (encoding is a property) + `write_run_logs()` |

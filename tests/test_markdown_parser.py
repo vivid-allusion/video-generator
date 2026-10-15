@@ -361,7 +361,7 @@ class TestFencedDurationShape:
 
 
 class TestImgRefAliases:
-    """`img` → primary (silent); `ref` → reference_images; mixing is rejected."""
+    """`img` → primary (silent); `ref` → the declared reference-image slot; mixing is rejected."""
 
     def test_img_alt_routes_to_primary_without_warning(self):
         content = "Prompt\n![img](https://example.com/frame.jpg)"
@@ -379,6 +379,21 @@ class TestImgRefAliases:
         assert urls == []
         assert references == {"reference_images": ["https://example.com/ref.jpg"]}
 
+    def test_ref_alt_routes_to_reference_image_urls_slot(self):
+        content = "Prompt\n![ref](https://example.com/ref.jpg)"
+        _, urls, _, _, references = parse_markdown(
+            content, declared_slots=["reference_image_urls"]
+        )
+        assert urls == []
+        assert references == {"reference_image_urls": ["https://example.com/ref.jpg"]}
+
+    def test_img_and_ref_mix_rejected_for_reference_image_urls(self):
+        content = (
+            "Prompt\n![img](https://example.com/frame.jpg)\n![ref](https://example.com/ref.jpg)\n"
+        )
+        with pytest.raises(ValueError, match="reference-image"):
+            parse_markdown(content, declared_slots=["reference_image_urls"])
+
     def test_ref_alt_falls_back_to_primary_when_slot_undeclared(self):
         content = "Prompt\n![ref](https://example.com/ref.jpg)"
         warnings: list[str] = []
@@ -393,7 +408,7 @@ class TestImgRefAliases:
         content = (
             "Prompt\n![img](https://example.com/frame.jpg)\n![ref](https://example.com/ref.jpg)\n"
         )
-        with pytest.raises(ValueError, match="reference_images"):
+        with pytest.raises(ValueError, match="reference-image"):
             parse_markdown(content, declared_slots=["reference_images"])
 
     def test_img_and_ref_without_declared_slot_no_conflict(self):
@@ -410,7 +425,7 @@ class TestImgRefAliases:
             "![image](https://example.com/frame.jpg)\n"
             "![reference_images](https://example.com/ref.jpg)"
         )
-        with pytest.raises(ValueError, match="reference_images"):
+        with pytest.raises(ValueError, match="reference-image"):
             parse_markdown(content, declared_slots=["reference_images"])
 
     def test_unknown_alt_still_warns_and_goes_primary(self):

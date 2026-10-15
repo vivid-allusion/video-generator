@@ -10,6 +10,13 @@
 
 ## Session History
 
+### 2026-10-15 — `ref` alias follows the profile's reference-image slot
+- `![ref]` routes to whichever reference-image slot the active profile
+  declares — `reference_images` (Seedance 2.5) or `reference_image_urls`
+  (MiniMax H3); first declared wins; undeclared → warn + primary. The
+  primary/reference mix rejection is generalized the same way.
+- Tests: new H3-slot routing + mix cases; suite green.
+
 ### 2026-10-15 — Studiolot mode: generator-ENGINES fallback
 - `_resolve_engine_for_studiolot()` no longer hard-fails when the output tree
   has no `00_APPLICATIONS/ENGINES/`: it falls back to the generator's own

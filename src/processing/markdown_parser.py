@@ -6,12 +6,13 @@ Parses Markdown `.md` files and extracts:
 - Reference URLs from markdown ![alt](URL) syntax — empty alt, the primary
   slot name, or an unknown alt feeds the primary slot; a declared named alt
   feeds the named slot. `img` is a primary alias (never warns); `ref` is an
-  alias for the `reference_images` slot
+  alias for the declared reference-image slot (`reference_images`, or
+  `reference_image_urls` on MiniMax H3)
 - Optional frame count from a `frames: N` line (deprecated, converted via fps)
 - Optional raw duration from a `duration: <int|token>` line, or from the
   first non-empty line inside a ```duration fence (same coercion)
 
-A bullet carrying BOTH a primary URL (e.g. `img`) and `reference_images` URLs
+A bullet carrying BOTH a primary URL (e.g. `img`) and reference-image URLs
 (e.g. `ref`) is rejected at parse time — the model cannot combine a
 first-frame image with reference images.
 
@@ -77,7 +78,10 @@ _DURATION_FENCE_OPEN_RE = re.compile(r"^```\s*duration\s*$", re.IGNORECASE)
 _FENCE_CLOSE_RE = re.compile(r"^```\s*$")
 
 _PRIMARY_ALIASES = {"video", "image", "source", "media", "src", "input", "img"}
-_SLOT_ALIASES = {"ref": "reference_images"}
+# `ref` routes to the declared reference-image slot — `reference_images`
+# (Seedance 2.5) or `reference_image_urls` (MiniMax H3); first declared wins.
+_REF_SLOT_NAMES = ("reference_images", "reference_image_urls")
+_SLOT_ALIASES = {"ref": _REF_SLOT_NAMES}
 
 
 def _strip_trailing_studio_block(content: str) -> str:
@@ -229,13 +233,18 @@ def _route_image(
     Unknown alts default to the primary slot (with a warning) instead of
     erroring the Markdown file. Generic media-kind alts ("video", "image",
     "img", "source", ...) are treated as primary markers and never warn. `ref`
-    is an alias for the `reference_images` slot.
+    is an alias for the declared reference-image slot — `reference_images`
+    (Seedance 2.5) or `reference_image_urls` (MiniMax H3), first declared wins.
     """
     alt = alt.strip()
     if not alt or declared_slots is None or alt == primary_slot or alt in _PRIMARY_ALIASES:
         urls.append(url)
         return
-    slot = _SLOT_ALIASES.get(alt, alt)
+    targets = _SLOT_ALIASES.get(alt)
+    if targets is not None:
+        slot = next((t for t in targets if t in declared_slots), targets[0])
+    else:
+        slot = alt
     if slot in declared_slots:
         references.setdefault(slot, []).append(url)
         return
@@ -259,7 +268,7 @@ def parse_markdown(
 
     Raises:
         ValueError: If no prompt found, or if the bullet combines a primary
-            image with `reference_images` URLs (the model cannot combine them).
+            image with reference-image URLs (the model cannot combine them).
     """
     lines = _strip_html_comments(
         _strip_trailing_studio_block(markdown_content), warn
@@ -322,9 +331,9 @@ def parse_markdown(
     if not prompt:
         raise ValueError("No prompt text found in markdown")
 
-    if urls and references.get("reference_images"):
+    if urls and any(references.get(name) for name in _REF_SLOT_NAMES):
         raise ValueError(
-            "Both a first-frame image (img) and reference_images URLs found — "
+            "Both a first-frame image (img) and reference-image URLs found — "
             "the model cannot combine them; keep one or the other"
         )
 

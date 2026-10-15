@@ -136,11 +136,12 @@ generated video (fallback `video_generator_<ts>.log` when nothing generated).
 - Named payload slots: `![slot](url)` routes the URL — empty alt, the primary
   slot name (`image_url_param`, e.g. `image`), or an unknown alt all feed the
   primary slot (unknown alt warns and defaults, no longer errors); `img` is a
-  silent primary alias, `ref` aliases the `reference_images` slot (undeclared →
-  warn + primary); a declared named alt (profile `slots:`) feeds that slot; no
-  schema → primary fallback; a bullet mixing a primary image with
-  `reference_images` URLs is rejected at parse time (the model cannot combine
-  them)
+  silent primary alias, `ref` aliases the declared reference-image slot —
+  `reference_images` (Seedance 2.5) or `reference_image_urls` (MiniMax H3),
+  first declared wins (undeclared → warn + primary); a declared named alt
+  (profile `slots:`) feeds that slot; no schema → primary fallback; a bullet
+  mixing a primary image with reference-image URLs is rejected at parse time
+  (the model cannot combine them)
 - `read_markdown(primary_slot=...)` takes the profile's `image_url_param`
   (default `"image"`); both run modes pass it through
 - `build_inputs()` reads `fps` and `duration` from profile `parameters` block,

@@ -25,6 +25,7 @@ _PLATFORM_KEY_MAP: dict[str, str] = {
     "google": "GOOGLE_API_KEY",
     "beeble": "BEEBLE_API_KEY",
     "evolink": "EVOLINK_API_KEY",
+    "spicyapi": "SPICYAPI_API_KEY",
 }
 
 PASS_STORE_PREFIX: str = "studiolot/"

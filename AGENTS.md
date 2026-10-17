@@ -88,7 +88,7 @@ GENERATOR_CONTRACT.md §4d.
 - Corrupted local engine falls back to pip-installed package
 
 ### Supported Platforms
-`replicate`, `fal`, `openrouter`, `google`, `beeble`, `evolink` — new engines added by installing the
+`replicate`, `fal`, `openrouter`, `google`, `beeble`, `evolink`, `spicyapi` — new engines added by installing the
 corresponding package.
 
 ### Processing Flow

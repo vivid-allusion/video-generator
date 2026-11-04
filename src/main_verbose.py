@@ -35,6 +35,7 @@ from .exceptions import (
 )
 from .processing.first_run import handle_first_run
 from .processing.markdown_parser import read_markdown
+from .processing.payload import payload_text, stamp_saved_file
 from .processing.profiles import (
     load_profile_standalone,
     load_profile_studiolot,
@@ -78,11 +79,49 @@ def _print_profile_guidance() -> None:
 
 
 def _apply_cli_overrides(profile: dict[str, Any], args: Any) -> dict[str, Any]:
-    """Return a copy of profile with CLI flags merged into parameters."""
+    """Return a copy of profile with CLI-only keys removed from parameters.
+
+    ``--no-save-payloads`` is carried on ``args.save_payloads`` (never merged
+    into ``parameters``) so the Engine cannot forward a Generator-only key to
+    the provider.
+    """
     params = dict(profile.get("parameters", {}))
-    if not args.save_payloads:
-        params["save_payloads"] = False
+    params.pop("save_payloads", None)
     return {**profile, "parameters": params}
+
+
+def _wrapped_prompt(item: Any, profile: dict[str, Any]) -> str:
+    """The exact prompt the Engine sends for this input."""
+    prefix = str(profile.get("prompt_prefix", "") or "")
+    suffix = str(profile.get("prompt_suffix", "") or "")
+    return f"{prefix}{item.prompt}{suffix}".strip()
+
+
+def _resolve_input_for_event(
+    msg: Any, inputs: list[Any], profile: dict[str, Any]
+) -> Any | None:
+    """Resolve a progress event to its input, preferring the sent prompt.
+
+    ``current`` is the fast path (engine-fal sets it to ``idx + 1``), but under
+    concurrency the provider prompt is authoritative. Returns None when no
+    confident match exists — the end-of-run pass will handle that file.
+    """
+    current = int(getattr(msg, "current", 0) or 0)
+    if not 1 <= current <= len(inputs):
+        return None
+    candidate = inputs[current - 1]
+    api_payload = getattr(msg, "api_payload", None)
+    if not isinstance(api_payload, dict):
+        return candidate
+    key = str(profile.get("prompt_param_name") or "prompt")
+    sent = api_payload.get(key)
+    if sent is None:
+        return candidate
+    sent_text = str(sent)
+    if _wrapped_prompt(candidate, profile) == sent_text:
+        return candidate
+    matches = [item for item in inputs if _wrapped_prompt(item, profile) == sent_text]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _markdown_duration(markdown: Markdown, profile: dict[str, Any]) -> float:
@@ -164,6 +203,41 @@ def _write_run_error_log(
     return log_path
 
 
+def _stamp_missed_results(
+    results: list[Any],
+    inputs: list[Any],
+    *,
+    profile: dict[str, Any],
+    platform: str,
+    engine: Any,
+    input_root: Path | None,
+    stamped: set[str],
+) -> None:
+    """End-of-run fallback for successful files the save event never stamped."""
+    by_source = {str(item.path): item for item in inputs}
+    for result in results:
+        if getattr(result, "status", "") != "ok":
+            continue
+        path = getattr(result, "path", None)
+        if path is None or str(path) in stamped:
+            continue
+        item = by_source.get(str(getattr(result, "source_path", "")))
+        if item is None:
+            continue
+        metadata = getattr(result, "metadata", None) or {}
+        api_payload = metadata.get("api_payload") if isinstance(metadata, dict) else None
+        text = payload_text(
+            item=item,
+            final_path=Path(path),
+            profile=profile,
+            platform=platform,
+            engine=engine,
+            input_root=input_root,
+            api_payload=api_payload,
+        )
+        stamp_saved_file(Path(path), text)
+
+
 def _execute_pipeline(
     markdown_files: list[Markdown],
     engine: Any,
@@ -173,12 +247,15 @@ def _execute_pipeline(
     input_root: Path | None = None,
     logs: bool = False,
     run_mode: str = "standalone",
+    save_payloads: bool = True,
 ) -> int:
     """Run the core generation pipeline: build inputs → run → report → log.
 
     A run that ends with at least one failed item — or raises out of
     `engine.run()` — always writes a run-level `_ERROR.log`, independent of
     the opt-in `--logs` state. Parse/preflight rejections never reach here.
+    Payload stamping happens on the engine's save event (staged `.part`, before
+    the rename) with an end-of-run fallback; a stamp failure never fails a run.
     """
     from rich.progress import (
         BarColumn,
@@ -191,6 +268,7 @@ def _execute_pipeline(
 
     inputs = build_inputs(markdown_files, platform, input_root, profile)
     total = len(inputs)
+    stamped: set[str] = set()
 
     with Progress(
         SpinnerColumn(),
@@ -212,6 +290,22 @@ def _execute_pipeline(
             payload = getattr(msg, "api_payload", None)
             if logs and payload is not None:
                 log_file_only(f"Payload: {payload}")
+            saved = getattr(msg, "saved_path", None)
+            final = getattr(msg, "final_path", None)
+            if save_payloads and saved is not None and final is not None:
+                item = _resolve_input_for_event(msg, inputs, profile)
+                if item is not None:
+                    stamp_text = payload_text(
+                        item=item,
+                        final_path=Path(final),
+                        profile=profile,
+                        platform=platform,
+                        engine=engine,
+                        input_root=input_root,
+                        api_payload=payload,
+                    )
+                    if stamp_saved_file(Path(saved), stamp_text):
+                        stamped.add(str(final))
 
         original = engine._on_progress
         engine._on_progress = on_progress
@@ -229,6 +323,16 @@ def _execute_pipeline(
         finally:
             engine._on_progress = original
 
+    if save_payloads:
+        _stamp_missed_results(
+            results,
+            inputs,
+            profile=profile,
+            platform=platform,
+            engine=engine,
+            input_root=input_root,
+            stamped=stamped,
+        )
     exit_code = _report_results(results)
     if any(getattr(r, "status", "") == "error" for r in results):
         _write_run_error_log(output_dir, run_mode, profile, input_root, results=results)
@@ -345,6 +449,7 @@ def _run_studiolot(args) -> int:
         input_dir,
         logs=False,
         run_mode="studiolot",
+        save_payloads=getattr(args, "save_payloads", True),
     )
 
 
@@ -424,6 +529,7 @@ def _run_standalone(args) -> int:
         input_path,
         logs=_logs_enabled(args, "standalone"),
         run_mode="standalone",
+        save_payloads=getattr(args, "save_payloads", True),
     )
 
 

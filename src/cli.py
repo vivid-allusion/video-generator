@@ -51,7 +51,7 @@ _ARGUMENTS: list[dict] = [
         "kwargs": {
             "action": "store_false",
             "dest": "save_payloads",
-            "help": "Disable saving JSON payloads for each request",
+            "help": "Disable embedding the generation payload (XMP) in each MP4",
         },
     },
     {

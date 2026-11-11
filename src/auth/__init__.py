@@ -29,6 +29,7 @@ _PLATFORM_KEY_MAP: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "bytedance": "ARK_API_KEY",
     "higgsfield": "HIGGSFIELD_API_KEY",
+    "oxen": "OXEN_API_KEY",
 }
 
 PASS_STORE_PREFIX: str = "studiolot/"

@@ -380,6 +380,15 @@ class TestImgRefAliases:
         assert urls == []
         assert references == {"reference_image_urls": ["https://example.com/ref.jpg"]}
 
+    @pytest.mark.parametrize("alt", ["ref", "reference_images", "reference_image_urls"])
+    def test_reference_alts_route_to_oxen_input_images(self, alt):
+        content = f"Prompt\n![{alt}](https://example.com/ref.jpg)"
+        _, urls, _, _, references = parse_markdown(
+            content, declared_slots=["input_images", "input_videos"]
+        )
+        assert urls == []
+        assert references == {"input_images": ["https://example.com/ref.jpg"]}
+
     def test_img_and_ref_mix_rejected_for_reference_image_urls(self):
         content = (
             "Prompt\n![img](https://example.com/frame.jpg)\n![ref](https://example.com/ref.jpg)\n"

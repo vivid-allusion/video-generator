@@ -79,8 +79,8 @@ _FENCE_CLOSE_RE = re.compile(r"^```\s*$")
 
 _PRIMARY_ALIASES = {"video", "image", "source", "media", "src", "input", "img"}
 # `ref`, `reference_images` and `reference_image_urls` all mean the row's
-# reference-picture slot (Seedance 2.5 / MiniMax H3); first declared wins.
-_REF_SLOT_NAMES = ("reference_images", "reference_image_urls")
+# reference-picture slot (Seedance 2.5 / MiniMax H3 / Oxen input_images); first declared wins.
+_REF_SLOT_NAMES = ("reference_images", "reference_image_urls", "input_images")
 _SLOT_ALIASES = {"ref": _REF_SLOT_NAMES, **{n: _REF_SLOT_NAMES for n in _REF_SLOT_NAMES}}
 
 

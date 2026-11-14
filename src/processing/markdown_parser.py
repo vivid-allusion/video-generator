@@ -78,10 +78,10 @@ _DURATION_FENCE_OPEN_RE = re.compile(r"^```\s*duration\s*$", re.IGNORECASE)
 _FENCE_CLOSE_RE = re.compile(r"^```\s*$")
 
 _PRIMARY_ALIASES = {"video", "image", "source", "media", "src", "input", "img"}
-# `ref` routes to the declared reference-image slot — `reference_images`
-# (Seedance 2.5) or `reference_image_urls` (MiniMax H3); first declared wins.
+# `ref`, `reference_images` and `reference_image_urls` all mean the row's
+# reference-picture slot (Seedance 2.5 / MiniMax H3); first declared wins.
 _REF_SLOT_NAMES = ("reference_images", "reference_image_urls")
-_SLOT_ALIASES = {"ref": _REF_SLOT_NAMES}
+_SLOT_ALIASES = {"ref": _REF_SLOT_NAMES, **{n: _REF_SLOT_NAMES for n in _REF_SLOT_NAMES}}
 
 
 def _strip_trailing_studio_block(content: str) -> str:
@@ -228,13 +228,12 @@ def _route_image(
     primary_slot: str,
     warn: "Callable[[str], None] | None" = None,
 ) -> None:
-    """Route a URL: empty/primary/unknown alt → primary; declared alt → named slot.
+    """Route a URL: empty/primary alt → primary; declared alt → named slot.
 
-    Unknown alts default to the primary slot (with a warning) instead of
-    erroring the Markdown file. Generic media-kind alts ("video", "image",
-    "img", "source", ...) are treated as primary markers and never warn. `ref`
-    is an alias for the declared reference-image slot — `reference_images`
-    (Seedance 2.5) or `reference_image_urls` (MiniMax H3), first declared wins.
+    Generic media-kind alts ("video", "image", "img", ...) are primary
+    markers. `ref`, `reference_images` and `reference_image_urls` all mean the
+    declared reference-image slot, first declared wins. Any other alt raises
+    ValueError, naming the alt and the declared slots.
     """
     alt = alt.strip()
     if not alt or declared_slots is None or alt == primary_slot or alt in _PRIMARY_ALIASES:
@@ -248,9 +247,10 @@ def _route_image(
     if slot in declared_slots:
         references.setdefault(slot, []).append(url)
         return
-    if warn is not None:
-        warn(f"Unknown reference slot '{slot}' — defaulting to primary slot '{primary_slot}'")
-    urls.append(url)
+    raise ValueError(
+        f"Unknown image alt '{alt}' — this row declares slots {declared_slots}; "
+        f"use one of them, ref, or an empty alt for the primary input '{primary_slot}'"
+    )
 
 
 def parse_markdown(
@@ -330,6 +330,12 @@ def parse_markdown(
 
     if not prompt:
         raise ValueError("No prompt text found in markdown")
+
+    if declared_slots is not None and len(urls) > 1:
+        raise ValueError(
+            f"{len(urls)} primary pictures found but the primary input "
+            f"'{primary_slot}' takes one — keep one or route the rest to a declared slot"
+        )
 
     if urls and any(references.get(name) for name in _REF_SLOT_NAMES):
         raise ValueError(

@@ -143,11 +143,13 @@ writes a run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log` via
   values clamp into the profile's `duration_min`/`duration_max` at build time,
   tokens pass through); `duration:` wins over `frames:` (Q8)
 - Named payload slots: `![slot](url)` routes the URL — empty alt, the primary
-  slot name (`image_url_param`, e.g. `image`), or an unknown alt all feed the
-  primary slot (unknown alt warns and defaults, no longer errors); `img` is a
-  silent primary alias, `ref` aliases the declared reference-image slot —
-  `reference_images` (Seedance 2.5) or `reference_image_urls` (MiniMax H3),
-  first declared wins (undeclared → warn + primary); a declared named alt
+  slot name (`image_url_param`, e.g. `image`) or `img` feed the primary slot;
+  `ref`, `reference_images` and `reference_image_urls` all mean the row's
+  reference-image slot — whichever of `reference_images` (Seedance 2.5) /
+  `reference_image_urls` (MiniMax H3) it declares, so one file runs on both;
+  any other alt that is not a declared slot rejects the file (names the alt and
+  the declared slots); two or more primary pictures reject it too (the primary
+  input takes one); a declared named alt
   (profile `slots:`) feeds that slot; no schema → primary fallback; a bullet
   mixing a primary image with reference-image URLs is rejected at parse time
   (the model cannot combine them)

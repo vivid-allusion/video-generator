@@ -112,17 +112,10 @@ class TestParseMarkdown:
         assert urls == ["https://example.com/1.jpg"]
         assert references == {}
 
-    def test_unknown_alt_defaults_to_primary_with_warning(self):
+    def test_unknown_alt_rejected_naming_alt_and_slots(self):
         content = "Prompt\n![foo](https://example.com/1.jpg)"
-        warnings: list[str] = []
-        _, urls, _, _, references = parse_markdown(
-            content,
-            warn=warnings.append,
-            declared_slots=["reference_images"],
-        )
-        assert urls == ["https://example.com/1.jpg"]
-        assert references == {}
-        assert any("Unknown reference slot 'foo'" in w for w in warnings)
+        with pytest.raises(ValueError, match="'foo'.*reference_images"):
+            parse_markdown(content, declared_slots=["reference_images"])
 
     def test_media_kind_alt_defaults_to_primary_silently(self):
         content = "Prompt\n![video](https://example.com/1.jpg)"
@@ -394,15 +387,32 @@ class TestImgRefAliases:
         with pytest.raises(ValueError, match="reference-image"):
             parse_markdown(content, declared_slots=["reference_image_urls"])
 
-    def test_ref_alt_falls_back_to_primary_when_slot_undeclared(self):
+    def test_ref_alt_rejected_when_slot_undeclared(self):
         content = "Prompt\n![ref](https://example.com/ref.jpg)"
-        warnings: list[str] = []
-        _, urls, _, _, references = parse_markdown(
-            content, warn=warnings.append, declared_slots=["audio"]
-        )
-        assert urls == ["https://example.com/ref.jpg"]
-        assert references == {}
-        assert any("defaulting to primary" in w for w in warnings)
+        with pytest.raises(ValueError, match="'ref'.*audio"):
+            parse_markdown(content, declared_slots=["audio"])
+
+    @pytest.mark.parametrize("alt", ["ref", "reference_images", "reference_image_urls"])
+    @pytest.mark.parametrize("slot", ["reference_images", "reference_image_urls"])
+    def test_all_reference_alts_reach_the_declared_slot(self, alt, slot):
+        content = f"Prompt\n![{alt}](https://e.com/1.jpg)\n![{alt}](https://e.com/2.jpg)"
+        _, urls, _, _, references = parse_markdown(content, declared_slots=[slot])
+        assert urls == []
+        assert references == {slot: ["https://e.com/1.jpg", "https://e.com/2.jpg"]}
+
+    def test_start_frame_beside_h3_reference_rejected(self):
+        content = "Prompt\n![](https://e.com/1.jpg)\n![reference_images](https://e.com/2.jpg)"
+        with pytest.raises(ValueError, match="reference-image"):
+            parse_markdown(
+                content, declared_slots=["reference_image_urls"], primary_slot="first_frame_image"
+            )
+
+    def test_two_primary_pictures_rejected_naming_input(self):
+        content = "Prompt\n![](https://e.com/1.jpg)\n![](https://e.com/2.jpg)"
+        with pytest.raises(ValueError, match="first_frame_image"):
+            parse_markdown(
+                content, declared_slots=["last_frame_image"], primary_slot="first_frame_image"
+            )
 
     def test_img_and_ref_mix_rejected(self):
         content = (
@@ -410,14 +420,6 @@ class TestImgRefAliases:
         )
         with pytest.raises(ValueError, match="reference-image"):
             parse_markdown(content, declared_slots=["reference_images"])
-
-    def test_img_and_ref_without_declared_slot_no_conflict(self):
-        content = (
-            "Prompt\n![img](https://example.com/frame.jpg)\n![ref](https://example.com/ref.jpg)"
-        )
-        _, urls, _, _, references = parse_markdown(content, declared_slots=["audio"])
-        assert urls == ["https://example.com/frame.jpg", "https://example.com/ref.jpg"]
-        assert references == {}
 
     def test_mix_rejection_also_for_slot_name_and_primary_alias(self):
         content = (
@@ -427,16 +429,6 @@ class TestImgRefAliases:
         )
         with pytest.raises(ValueError, match="reference-image"):
             parse_markdown(content, declared_slots=["reference_images"])
-
-    def test_unknown_alt_still_warns_and_goes_primary(self):
-        content = "Prompt\n![foo](https://example.com/x.jpg)"
-        warnings: list[str] = []
-        _, urls, _, _, references = parse_markdown(
-            content, warn=warnings.append, declared_slots=["reference_images"]
-        )
-        assert urls == ["https://example.com/x.jpg"]
-        assert references == {}
-        assert any("Unknown reference slot 'foo'" in w for w in warnings)
 
     def test_read_markdown_fenced_shapes(self, tmp_path):
         markdown = tmp_path / "b.md"

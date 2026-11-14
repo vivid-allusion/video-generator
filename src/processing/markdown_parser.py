@@ -3,11 +3,11 @@
 Parses Markdown `.md` files and extracts:
 - Text prompt: a plain first line, or the content of a ```prompt fence — every
   line up to the closing ``` becomes the prompt, newlines kept
-- Reference URLs from markdown ![alt](URL) syntax — empty alt, the primary
-  slot name, or an unknown alt feeds the primary slot; a declared named alt
-  feeds the named slot. `img` is a primary alias (never warns); `ref` is an
-  alias for the declared reference-image slot (`reference_images`, or
-  `reference_image_urls` on MiniMax H3)
+- Reference URLs from markdown ![alt](URL) syntax — empty alt, `img` or the
+  primary slot name feeds the primary slot; a declared named alt feeds the
+  named slot. `ref`, `reference_images` and `reference_image_urls` all mean
+  the row's declared reference-image slot. An unknown alt rejects the file,
+  and so do two or more primary pictures
 - Optional frame count from a `frames: N` line (deprecated, converted via fps)
 - Optional raw duration from a `duration: <int|token>` line, or from the
   first non-empty line inside a ```duration fence (same coercion)
@@ -226,7 +226,6 @@ def _route_image(
     references: dict[str, list[str]],
     declared_slots: list[str] | None,
     primary_slot: str,
-    warn: "Callable[[str], None] | None" = None,
 ) -> None:
     """Route a URL: empty/primary alt → primary; declared alt → named slot.
 
@@ -267,8 +266,10 @@ def parse_markdown(
     no format warnings inside a fence.
 
     Raises:
-        ValueError: If no prompt found, or if the bullet combines a primary
-            image with reference-image URLs (the model cannot combine them).
+        ValueError: If no prompt found, if the bullet combines a primary
+            image with reference-image URLs (the model cannot combine them),
+            if an alt is neither primary nor a declared slot, or if two or
+            more primary pictures are given.
     """
     lines = _strip_html_comments(
         _strip_trailing_studio_block(markdown_content), warn
@@ -316,7 +317,7 @@ def parse_markdown(
         match = _IMG_URL_PATTERN.search(line)
         if match:
             _route_image(
-                match.group(1), match.group(2), urls, references, declared_slots, primary_slot, warn
+                match.group(1), match.group(2), urls, references, declared_slots, primary_slot
             )
         elif _FRAMES_RE.match(stripped):
             if frames is None:

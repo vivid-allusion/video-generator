@@ -460,7 +460,7 @@ class TestImgRefAliases:
 
 
 class TestStudioMarksBlock:
-    """The IDE's trailing `studio:` cull-marks block is skipped whole."""
+    """A front matter block at the top is skipped whole; the old bottom place is refused."""
 
     _BLOCK = (
         "---\n"
@@ -475,13 +475,13 @@ class TestStudioMarksBlock:
     def test_block_skipped_matches_blockless_file(self):
         base = "A detective in a dim office\n![](https://example.com/a.jpg)\n"
         warnings: list[str] = []
-        with_block = parse_markdown(base + "\n" + self._BLOCK, warn=warnings.append)
+        with_block = parse_markdown(self._BLOCK + base, warn=warnings.append)
         without_block = parse_markdown(base)
         assert with_block == without_block
         assert warnings == []
 
     def test_block_is_never_a_url_or_prompt(self):
-        content = "Prompt\n" + self._BLOCK
+        content = self._BLOCK + "Prompt\n"
         prompt, urls, frames, duration, references = parse_markdown(content)
         assert prompt == "Prompt"
         assert urls == []
@@ -491,7 +491,6 @@ class TestStudioMarksBlock:
 
     def test_extra_and_unknown_children_skipped(self):
         content = (
-            "Prompt\n"
             "---\n"
             "studio:\n"
             "  marks:\n"
@@ -499,6 +498,7 @@ class TestStudioMarksBlock:
             "  timecode: 00:00:12\n"
             "  future_key: [a, b, c]\n"
             "---\n"
+            "Prompt\n"
         )
         warnings: list[str] = []
         prompt, urls, _, _, _ = parse_markdown(content, warn=warnings.append)
@@ -508,7 +508,6 @@ class TestStudioMarksBlock:
 
     def test_malformed_yaml_inside_block_skipped_without_crash(self):
         content = (
-            "Prompt\n"
             "---\n"
             "studio:\n"
             "  marks:\n"
@@ -516,6 +515,7 @@ class TestStudioMarksBlock:
             "   colors: [unclosed\n"
             "  : : :\n"
             "---\n"
+            "Prompt\n"
         )
         warnings: list[str] = []
         prompt, urls, _, _, _ = parse_markdown(content, warn=warnings.append)
@@ -524,7 +524,7 @@ class TestStudioMarksBlock:
         assert warnings == []
 
     def test_duration_and_frames_around_block_unchanged(self):
-        content = "Prompt\nframes: 96\nduration: auto\n" + self._BLOCK
+        content = self._BLOCK + "Prompt\nframes: 96\nduration: auto\n"
         _, _, frames, duration, _ = parse_markdown(content)
         assert frames == 96
         assert duration == "auto"
@@ -541,12 +541,20 @@ class TestStudioMarksBlock:
         assert urls == ["https://example.com/a.jpg"]
         assert references == {}
 
+    def test_any_keys_front_matter_skipped(self):
+        content = "---\nPrompt Summary: An owl turns.\n---\nAn owl turns its head.\n"
+        assert parse_markdown(content)[0] == "An owl turns its head."
+
+    def test_trailing_studio_block_refused(self):
+        with pytest.raises(ValueError, match="top"):
+            parse_markdown("Prompt\n\n" + self._BLOCK)
+
     def test_block_without_prompt_raises(self):
         with pytest.raises(ValueError, match="No prompt"):
             parse_markdown(self._BLOCK)
 
     def test_inline_studio_root_key_skipped(self):
-        content = "Prompt\n---\nstudio: {marks: {rating: 1}}\n---\n"
+        content = "---\nstudio: {marks: {rating: 1}}\n---\nPrompt\n"
         prompt, urls, _, _, _ = parse_markdown(content)
         assert prompt == "Prompt"
         assert urls == []
@@ -554,15 +562,14 @@ class TestStudioMarksBlock:
     def test_read_markdown_strips_block(self, tmp_path):
         markdown = tmp_path / "b.md"
         markdown.write_text(
-            "Prompt\n"
-            "duration: 7\n"
-            "![](https://example.com/frame.jpg)\n"
-            "\n"
             "---\n"
             "studio:\n"
             "  marks:\n"
             "    rating: 2\n"
             "---\n"
+            "Prompt\n"
+            "duration: 7\n"
+            "![](https://example.com/frame.jpg)\n"
         )
         markdown_files = read_markdown(tmp_path, dry_run=True)
         assert len(markdown_files) == 1

@@ -23,10 +23,10 @@ HTML comments are ignored: anything between <!-- and --> (single-line,
 inline, or spanning multiple lines) is stripped before parsing, so
 commented-out prompts, images, or metadata never reach the payload.
 
-A trailing `---`-fenced YAML block whose root key is `studio:` is the IDE's
-cull-marks metadata. It is skipped whole — never a prompt, never a URL, never a
-warning — before any line is inspected. Detection is structural (fence + root
-key), so malformed YAML inside the block is skipped rather than raising.
+A `---` block starting on line 1 and closed by the next `---` is front matter
+(the IDE's marks, a Prompt Summary, anything). It is skipped whole — never a
+prompt, never a URL, never a warning — whatever its keys. The old place, a
+trailing `studio:` block, is refused.
 
 A leading whole-line media embed — image or video, any target — is the
 previous generation kept by tooling as a visual bookmark: it is skipped whole
@@ -35,7 +35,7 @@ previous generation kept by tooling as a visual bookmark: it is skipped whole
 Format:
     Line 1: Text prompt — a plain line or a ```prompt fence
     Lines 2+: ![alt](URL), frames: N, duration: <value> and/or a ```duration fence
-    (optional) trailing `studio:` marks block
+    (optional) front matter on line 1, before the prompt
 """
 
 import re
@@ -84,49 +84,36 @@ _REF_SLOT_NAMES = ("reference_images", "reference_image_urls", "input_images")
 _SLOT_ALIASES = {"ref": _REF_SLOT_NAMES, **{n: _REF_SLOT_NAMES for n in _REF_SLOT_NAMES}}
 
 
-def _strip_trailing_studio_block(content: str) -> str:
-    """Drop a trailing `---`-fenced block whose root key is `studio:`.
+def _strip_front_matter(content: str) -> str:
+    """Drop a `---` block that starts on line 1 and closes at the next `---`.
 
-    The IDE appends cull marks as a namespaced trailing block, e.g.::
-
-        ---
-        studio:
-          marks:
-            rating: 3
-            colors: [green, red]
-            emoji: ["😀"]
-        ---
-
-    The block is metadata, never a prompt or a URL, so it is removed whole
-    (no warnings). Detection is structural — a closing fence on the last
-    non-blank line, a matching opening fence, and a `studio:` root key as the
-    first non-blank line inside — so malformed YAML is skipped, never parsed.
-    A trailing fence with any other root key, or content after the fence, is
-    left untouched (today's behaviour).
+    Whatever its keys, the block is metadata, never prompt or media. An
+    unclosed opener is left alone.
     """
     lines = content.split("\n")
+    if not lines or not _FENCE_RE.match(lines[0].strip()):
+        return content
+    for end in range(1, len(lines)):
+        if _FENCE_RE.match(lines[end].strip()):
+            return "\n".join(lines[end + 1 :])
+    return content
 
+
+def _has_trailing_studio_block(content: str) -> bool:
+    """True when the old-place `---` block with a `studio:` root ends the file."""
+    lines = content.split("\n")
     end = len(lines) - 1
     while end >= 0 and not lines[end].strip():
         end -= 1
     if end < 0 or not _FENCE_RE.match(lines[end].strip()):
-        return content
-
+        return False
     start = end - 1
     while start >= 0 and not _FENCE_RE.match(lines[start].strip()):
         start -= 1
-    if start < 0:
-        return content
-
-    root_key = ""
-    for line in lines[start + 1 : end]:
-        if line.strip():
-            root_key = line.strip()
-            break
-    if not _STUDIO_ROOT_RE.match(root_key):
-        return content
-
-    return "\n".join(lines[:start])
+    if start <= 0:
+        return False
+    root_key = next((ln.strip() for ln in lines[start + 1 : end] if ln.strip()), "")
+    return bool(_STUDIO_ROOT_RE.match(root_key))
 
 
 def _strip_html_comments(
@@ -272,9 +259,13 @@ def parse_markdown(
             if an alt is neither primary nor a declared slot, or if two or
             more primary pictures are given.
     """
-    lines = _strip_html_comments(
-        _strip_trailing_studio_block(markdown_content), warn
-    ).split("\n")
+    body = _strip_front_matter(markdown_content)
+    if _has_trailing_studio_block(body):
+        raise ValueError(
+            "the studio: block is at the bottom; it now goes at the top of the file, "
+            "between two --- lines on line 1"
+        )
+    lines = _strip_html_comments(body, warn).split("\n")
     prompt = ""
     urls: list[str] = []
     frames: int | None = None

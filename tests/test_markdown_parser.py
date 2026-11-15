@@ -692,7 +692,15 @@ class TestReadMarkdown:
 
 def test_empty_prompt_refused_by_default_and_naming_file(tmp_path):
     (tmp_path / "S09_empty.md").write_text("\n")
-    assert read_markdown(tmp_path) == []
+    from loguru import logger
+
+    messages: list[str] = []
+    sink = logger.add(messages.append, level="ERROR")
+    try:
+        assert read_markdown(tmp_path) == []
+    finally:
+        logger.remove(sink)
+    assert any("S09_empty.md" in m for m in messages)
 
 
 def test_empty_prompt_admitted_when_allowed(tmp_path):

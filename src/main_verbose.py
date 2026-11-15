@@ -37,9 +37,9 @@ from .processing.first_run import handle_first_run
 from .processing.markdown_parser import read_markdown
 from .processing.payload import payload_text, stamp_saved_file
 from .processing.profiles import (
-    profile_has_prompt_text,
     load_profile_standalone,
     load_profile_studiolot,
+    profile_has_prompt_text,
 )
 from .utils.logging import (
     log_file_only,

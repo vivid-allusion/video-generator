@@ -52,6 +52,13 @@ def normalize_legacy_profile(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def profile_has_prompt_text(profile: dict[str, Any]) -> bool:
+    """True when the profile's prefix or suffix supplies prompt text."""
+    prefix = str(profile.get("prompt_prefix", "") or "").strip()
+    suffix = str(profile.get("prompt_suffix", "") or "").strip()
+    return bool(prefix or suffix)
+
+
 def list_standby() -> list[Path]:
     """Return sorted YAML paths available on the STANDBY shelf."""
     return sorted(_STANDBY.glob("*.yaml")) + sorted(_STANDBY.glob("*.yml"))

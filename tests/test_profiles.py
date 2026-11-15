@@ -67,3 +67,11 @@ def test_duration_config_fps_still_used():
 def test_parameters_fps_injected_when_missing():
     data = normalize_legacy_profile({"endpoint": "owner/model"})
     assert data["parameters"]["fps"] == 24
+
+
+def test_profile_has_prompt_text():
+    from src.processing.profiles import profile_has_prompt_text
+
+    assert profile_has_prompt_text({"prompt_prefix": "a"})
+    assert profile_has_prompt_text({"prompt_suffix": " b "})
+    assert not profile_has_prompt_text({"prompt_prefix": " ", "prompt_suffix": None})

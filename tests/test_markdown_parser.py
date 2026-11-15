@@ -688,3 +688,14 @@ class TestReadMarkdown:
         markdown_files = read_markdown(tmp_path, dry_run=True)
         assert markdown_files[0]["duration"] == "auto"
         assert markdown_files[0]["reference_urls"] == ["https://example.com/frame.jpg"]
+
+
+def test_empty_prompt_refused_by_default_and_naming_file(tmp_path):
+    (tmp_path / "S09_empty.md").write_text("\n")
+    assert read_markdown(tmp_path) == []
+
+
+def test_empty_prompt_admitted_when_allowed(tmp_path):
+    (tmp_path / "S01_empty.md").write_text("\n")
+    result = read_markdown(tmp_path, allow_empty_prompt=True)
+    assert [m["prompt"] for m in result] == [""]

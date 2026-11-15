@@ -37,6 +37,7 @@ from .processing.first_run import handle_first_run
 from .processing.markdown_parser import read_markdown
 from .processing.payload import payload_text, stamp_saved_file
 from .processing.profiles import (
+    profile_has_prompt_text,
     load_profile_standalone,
     load_profile_studiolot,
 )
@@ -426,6 +427,7 @@ def _run_studiolot(args) -> int:
         dry_run=args.dry_run,
         declared_slots=profile.get("slots"),
         primary_slot=profile.get("image_url_param") or "image",
+        allow_empty_prompt=profile_has_prompt_text(profile),
     )
     if not markdown_files:
         if any(input_dir.rglob("*.md")):
@@ -483,6 +485,7 @@ def _run_standalone(args) -> int:
         dry_run=args.dry_run,
         declared_slots=profile.get("slots"),
         primary_slot=profile.get("image_url_param") or "image",
+        allow_empty_prompt=profile_has_prompt_text(profile),
     )
     _handle_preflight_checks(args, markdown_files, profile)
 

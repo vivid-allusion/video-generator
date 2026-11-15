@@ -257,6 +257,7 @@ def parse_markdown(
     warn: "Callable[[str], None] | None" = None,
     declared_slots: list[str] | None = None,
     primary_slot: str = "image",
+    allow_empty_prompt: bool = False,
 ) -> tuple[str, list[str], int | None, int | str | None, dict[str, list[str]]]:
     """Parse a .md Markdown file, returning (prompt, urls, frames, duration, references).
 
@@ -329,7 +330,7 @@ def parse_markdown(
             _check_line(line, i + 1, warn)
         i += 1
 
-    if not prompt:
+    if not prompt and not allow_empty_prompt:
         raise ValueError("No prompt text found in markdown")
 
     if declared_slots is not None and len(urls) > 1:
@@ -374,6 +375,7 @@ def read_markdown(
     dry_run: bool = False,
     declared_slots: list[str] | None = None,
     primary_slot: str = "image",
+    allow_empty_prompt: bool = False,
 ) -> list[Markdown]:
     """Read .md Markdown files from input_dir, extract prompt + URLs + frames + duration.
 
@@ -381,6 +383,8 @@ def read_markdown(
     routing; without it every alt falls back to the primary slot.
     primary_slot (from the profile's `image_url_param` key) is the slot name
     that routes to the primary input; unknown alts default there.
+    allow_empty_prompt admits files with no prompt text (the profile's prefix
+    or suffix then is the whole prompt).
     Returns [] (with a warning) when the directory holds no .md files.
 
     FAILS LOUD: a Markdown file that cannot be parsed, or that references media
@@ -398,6 +402,7 @@ def read_markdown(
                 warn=logger.warning,
                 declared_slots=declared_slots,
                 primary_slot=primary_slot,
+                allow_empty_prompt=allow_empty_prompt,
             )
         except ValueError as e:
             logger.error(f"Rejected {md_path.name}: {e}")

@@ -1,7 +1,7 @@
 """Shared type definitions for the application."""
 
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class Markdown(TypedDict):
@@ -13,3 +13,4 @@ class Markdown(TypedDict):
     frames: int | None
     duration: int | str | None
     references: dict[str, list[str]]
+    settings: NotRequired[dict[str, Any]]

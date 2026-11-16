@@ -11,6 +11,9 @@ Parses Markdown `.md` files and extracts:
 - Optional frame count from a `frames: N` line (deprecated, converted via fps)
 - Optional raw duration from a `duration: <int|token>` line, or from the
   first non-empty line inside a ```duration fence (same coercion)
+- Setting blocks (```resolution, ```aspect_ratio, ```audio, and any setting
+  of the engine this model lacks): first non-empty line each, never the
+  prompt, checked against the model (see setting_blocks)
 
 A bullet carrying BOTH a primary URL (e.g. `img`) and reference-image URLs
 (e.g. `ref`) is rejected at parse time — the model cannot combine a
@@ -42,14 +45,15 @@ import re
 import sys
 import urllib.request
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from ..datatypes import Markdown
+from .setting_blocks import block_names, check_settings
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
 _FRAMES_RE = re.compile(r"^frames:\s*(\d+)", re.IGNORECASE)
 _DURATION_RE = re.compile(r"^duration:\s*(\S+)", re.IGNORECASE)
@@ -76,6 +80,7 @@ _FENCE_RE = re.compile(r"^-{3,}$")
 _PROMPT_FENCE_OPEN_RE = re.compile(r"^```\s*prompt\s*$", re.IGNORECASE)
 _DURATION_FENCE_OPEN_RE = re.compile(r"^```\s*duration\s*$", re.IGNORECASE)
 _FENCE_CLOSE_RE = re.compile(r"^```\s*$")
+_NAMED_FENCE_RE = re.compile(r"^```\s*(\w+)\s*$")
 
 _PRIMARY_ALIASES = {"video", "image", "source", "media", "src", "input", "img"}
 # `ref`, `reference_images` and `reference_image_urls` all mean the row's
@@ -245,8 +250,13 @@ def parse_markdown(
     declared_slots: list[str] | None = None,
     primary_slot: str = "image",
     allow_empty_prompt: bool = False,
+    setting_names: "Collection[str]" = (),
+    settings: dict[str, str] | None = None,
 ) -> tuple[str, list[str], int | None, int | str | None, dict[str, list[str]]]:
     """Parse a .md Markdown file, returning (prompt, urls, frames, duration, references).
+
+    A fence named in setting_names puts its first non-empty line into
+    settings (first block of a name wins); without settings none is read.
 
     A leading whole-line media embed (the previous-generation bookmark) is
     ignored — the prompt is the first non-embed text line, or the content of a
@@ -279,6 +289,14 @@ def parse_markdown(
         stripped = line.strip()
         if not stripped:
             i += 1
+            continue
+
+        named = _NAMED_FENCE_RE.match(stripped)
+        if settings is not None and named and named.group(1).lower() in setting_names:
+            inner, i = _fence_content(lines, i, warn)
+            first = next((ln.strip() for ln in inner if ln.strip()), None)
+            if first is not None:
+                settings.setdefault(named.group(1).lower(), first)
             continue
 
         if not seen_prompt:
@@ -367,6 +385,7 @@ def read_markdown(
     declared_slots: list[str] | None = None,
     primary_slot: str = "image",
     allow_empty_prompt: bool = False,
+    model: tuple[dict[str, Any], set[str]] | None = None,
 ) -> list[Markdown]:
     """Read .md Markdown files from input_dir, extract prompt + URLs + frames + duration.
 
@@ -376,6 +395,9 @@ def read_markdown(
     that routes to the primary input; unknown alts default there.
     allow_empty_prompt admits files with no prompt text (the profile's prefix
     or suffix then is the whole prompt).
+    model (from setting_blocks.model_settings) turns on setting blocks: a file
+    whose block the model does not have, or whose value it does not take, is
+    rejected; accepted ones land in the file's `settings` overrides.
     Returns [] (with a warning) when the directory holds no .md files.
 
     FAILS LOUD: a Markdown file that cannot be parsed, or that references media
@@ -385,8 +407,10 @@ def read_markdown(
     md_files = sorted(input_dir.rglob("*.md"))
     result: list[Markdown] = []
     rejected = 0
+    names = block_names(*model) if model is not None else set()
     for md_path in md_files:
         content = md_path.read_text(encoding="utf-8")
+        blocks: dict[str, str] | None = {} if model is not None else None
         try:
             prompt, urls, frames, duration, references = parse_markdown(
                 content,
@@ -394,7 +418,10 @@ def read_markdown(
                 declared_slots=declared_slots,
                 primary_slot=primary_slot,
                 allow_empty_prompt=allow_empty_prompt,
+                setting_names=names,
+                settings=blocks,
             )
+            settings = check_settings(blocks, model[0]) if blocks and model else {}
         except ValueError as e:
             logger.error(f"Rejected {md_path.name}: {e}")
             rejected += 1
@@ -424,6 +451,7 @@ def read_markdown(
                 "frames": frames,
                 "duration": duration,
                 "references": references,
+                "settings": settings,
             }
         )
     if not result:

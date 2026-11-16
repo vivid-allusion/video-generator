@@ -41,6 +41,7 @@ from .processing.profiles import (
     load_profile_studiolot,
     profile_has_prompt_text,
 )
+from .processing.setting_blocks import model_settings
 from .utils.logging import (
     log_file_only,
     setup_logging,
@@ -239,6 +240,18 @@ def _stamp_missed_results(
         stamp_saved_file(Path(path), text)
 
 
+def _setting_runs(
+    markdown_files: list[Markdown], inputs: list[Any]
+) -> list[tuple[dict[str, Any], list[Any]]]:
+    """Split inputs into one engine run per distinct set of block settings."""
+    runs: dict[tuple, tuple[dict[str, Any], list[Any]]] = {}
+    for md, item in zip(markdown_files, inputs, strict=True):
+        overrides = md.get("settings") or {}
+        key = tuple(sorted(overrides.items()))
+        runs.setdefault(key, (overrides, []))[1].append(item)
+    return list(runs.values())
+
+
 def _execute_pipeline(
     markdown_files: list[Markdown],
     engine: Any,
@@ -257,6 +270,8 @@ def _execute_pipeline(
     the opt-in `--logs` state. Parse/preflight rejections never reach here.
     Payload stamping happens on the engine's save event (staged `.part`, before
     the rename) with an end-of-run fallback; a stamp failure never fails a run.
+    Files whose setting blocks differ run separately, each with its own
+    settings laid over the profile's parameters (the engine reads this profile).
     """
     from rich.progress import (
         BarColumn,
@@ -270,6 +285,8 @@ def _execute_pipeline(
     inputs = build_inputs(markdown_files, platform, input_root, profile)
     total = len(inputs)
     stamped: set[str] = set()
+    run_inputs: list[Any] = []
+    done = [0]
 
     with Progress(
         SpinnerColumn(),
@@ -285,7 +302,7 @@ def _execute_pipeline(
             bar.update(task, description=text)
             current = getattr(msg, "current", 0)
             if current:
-                bar.update(task, completed=current)
+                bar.update(task, completed=done[0] + current)
             if getattr(msg, "level", "") == "error":
                 logger.error(text)
             payload = getattr(msg, "api_payload", None)
@@ -294,7 +311,7 @@ def _execute_pipeline(
             saved = getattr(msg, "saved_path", None)
             final = getattr(msg, "final_path", None)
             if save_payloads and saved is not None and final is not None:
-                item = _resolve_input_for_event(msg, inputs, profile)
+                item = _resolve_input_for_event(msg, run_inputs, profile)
                 if item is not None:
                     stamp_text = payload_text(
                         item=item,
@@ -310,8 +327,25 @@ def _execute_pipeline(
 
         original = engine._on_progress
         engine._on_progress = on_progress
+        base = profile.get("parameters", {})
+        results: list[Any] = []
         try:
-            results = engine.run(inputs)
+            for overrides, group in _setting_runs(markdown_files, inputs):
+                profile["parameters"] = {**base, **overrides}
+                run_inputs[:] = group
+                group_results = engine.run(group)
+                if save_payloads:
+                    _stamp_missed_results(
+                        group_results,
+                        group,
+                        profile=profile,
+                        platform=platform,
+                        engine=engine,
+                        input_root=input_root,
+                        stamped=stamped,
+                    )
+                results += group_results
+                done[0] += len(group)
         except Exception:
             _write_run_error_log(
                 output_dir,
@@ -323,17 +357,8 @@ def _execute_pipeline(
             raise
         finally:
             engine._on_progress = original
+            profile["parameters"] = base
 
-    if save_payloads:
-        _stamp_missed_results(
-            results,
-            inputs,
-            profile=profile,
-            platform=platform,
-            engine=engine,
-            input_root=input_root,
-            stamped=stamped,
-        )
     exit_code = _report_results(results)
     if any(getattr(r, "status", "") == "error" for r in results):
         _write_run_error_log(output_dir, run_mode, profile, input_root, results=results)
@@ -421,6 +446,7 @@ def _run_studiolot(args) -> int:
     profile["platform"] = platform
 
     input_dir = Path(args.input_dir) if args.input_dir else Path(".")
+    engines_dir = find_project_engines_dir(output_dir) or find_generator_engines_dir()
 
     markdown_files = read_markdown(
         input_dir,
@@ -428,6 +454,7 @@ def _run_studiolot(args) -> int:
         declared_slots=profile.get("slots"),
         primary_slot=profile.get("image_url_param") or "image",
         allow_empty_prompt=profile_has_prompt_text(profile),
+        model=model_settings(platform, profile.get("endpoint"), [engines_dir]),
     )
     if not markdown_files:
         if any(input_dir.rglob("*.md")):
@@ -486,6 +513,7 @@ def _run_standalone(args) -> int:
         declared_slots=profile.get("slots"),
         primary_slot=profile.get("image_url_param") or "image",
         allow_empty_prompt=profile_has_prompt_text(profile),
+        model=model_settings(platform, profile.get("endpoint"), search_paths),
     )
     _handle_preflight_checks(args, markdown_files, profile)
 

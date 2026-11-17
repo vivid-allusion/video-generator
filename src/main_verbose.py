@@ -34,6 +34,7 @@ from .exceptions import (
     ValidationError,
 )
 from .processing.first_run import handle_first_run
+from .processing.landing import run_landed
 from .processing.markdown_parser import read_markdown
 from .processing.payload import payload_text, stamp_saved_file
 from .processing.profiles import (
@@ -205,41 +206,6 @@ def _write_run_error_log(
     return log_path
 
 
-def _stamp_missed_results(
-    results: list[Any],
-    inputs: list[Any],
-    *,
-    profile: dict[str, Any],
-    platform: str,
-    engine: Any,
-    input_root: Path | None,
-    stamped: set[str],
-) -> None:
-    """End-of-run fallback for successful files the save event never stamped."""
-    by_source = {str(item.path): item for item in inputs}
-    for result in results:
-        if getattr(result, "status", "") != "ok":
-            continue
-        path = getattr(result, "path", None)
-        if path is None or str(path) in stamped:
-            continue
-        item = by_source.get(str(getattr(result, "source_path", "")))
-        if item is None:
-            continue
-        metadata = getattr(result, "metadata", None) or {}
-        api_payload = metadata.get("api_payload") if isinstance(metadata, dict) else None
-        text = payload_text(
-            item=item,
-            final_path=Path(path),
-            profile=profile,
-            platform=platform,
-            engine=engine,
-            input_root=input_root,
-            api_payload=api_payload,
-        )
-        stamp_saved_file(Path(path), text)
-
-
 def _setting_runs(
     markdown_files: list[Markdown], inputs: list[Any]
 ) -> list[tuple[dict[str, Any], list[Any]]]:
@@ -269,7 +235,7 @@ def _execute_pipeline(
     `engine.run()` — always writes a run-level `_ERROR.log`, independent of
     the opt-in `--logs` state. Parse/preflight rejections never reach here.
     Payload stamping happens on the engine's save event (staged `.part`, before
-    the rename) with an end-of-run fallback; a stamp failure never fails a run.
+    the rename) else as each prompt's clip is staged and moved into the output folder; a stamp failure never fails a run.
     Files whose setting blocks differ run separately, each with its own
     settings laid over the profile's parameters (the engine reads this profile).
     """
@@ -333,17 +299,31 @@ def _execute_pipeline(
             for overrides, group in _setting_runs(markdown_files, inputs):
                 profile["parameters"] = {**base, **overrides}
                 run_inputs[:] = group
-                group_results = engine.run(group)
-                if save_payloads:
-                    _stamp_missed_results(
-                        group_results,
-                        group,
-                        profile=profile,
-                        platform=platform,
-                        engine=engine,
-                        input_root=input_root,
-                        stamped=stamped,
+                by_source = {str(item.path): item for item in group}
+
+                def stamp(result: Any, by_source: dict[str, Any] = by_source) -> None:
+                    item = by_source.get(str(getattr(result, "source_path", "")))
+                    if item is None or str(result.path) in stamped:
+                        return
+                    metadata = getattr(result, "metadata", None)
+                    stamp_saved_file(
+                        Path(result.path),
+                        payload_text(
+                            item=item,
+                            final_path=Path(result.path),
+                            profile=profile,
+                            platform=platform,
+                            engine=engine,
+                            input_root=input_root,
+                            api_payload=metadata.get("api_payload")
+                            if isinstance(metadata, dict)
+                            else None,
+                        ),
                     )
+
+                group_results = run_landed(
+                    engine, group, output_dir, stamp if save_payloads else None
+                )
                 results += group_results
                 done[0] += len(group)
         except Exception:

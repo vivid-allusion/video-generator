@@ -235,7 +235,8 @@ def _execute_pipeline(
     `engine.run()` — always writes a run-level `_ERROR.log`, independent of
     the opt-in `--logs` state. Parse/preflight rejections never reach here.
     Payload stamping happens on the engine's save event (staged `.part`, before
-    the rename) else as each prompt's clip is staged and moved into the output folder; a stamp failure never fails a run.
+    the rename), else as each prompt's clip is staged, before it is moved into the
+    output folder; a stamp failure never fails a run.
     Files whose setting blocks differ run separately, each with its own
     settings laid over the profile's parameters (the engine reads this profile).
     """

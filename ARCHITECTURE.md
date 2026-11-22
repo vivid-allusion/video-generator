@@ -1,97 +1,85 @@
-# Architecture — how the projects fit together
+# Architecture — where the Video Generator sits
 
-AI Studio Lot is a free, open-source suite for AI media generation. It runs on
-your own machine, works in plain text, and is driven from a terminal TUI. This
-page describes the pieces and how they talk to each other, so you know where a
-change belongs.
-
-## The three nodes
-
-```
-Local machine ──▶ B2 bucket ──▶ AI APIs
-(project files,   (media as       (Replicate, Fal,
- markdown, TUI)    public URLs)    Google, OpenRouter, Evolink…)
-```
-
-1. **Local machine** — your projects live as ordinary folders. Markdown files
-   describe what to generate; the TUI is the interface.
-2. **B2 object storage** — the bridge. Remote models can only read media they
-   can fetch by public URL, so media is uploaded to a bucket before a prompt
-   references it.
-3. **AI APIs** — receive a prompt plus media URLs and return generated images,
-   video, or text.
+Helmer is a desktop app for making films with AI. The Video Generator is one of
+the Generators Helmer uses; the Helmer Transceiver runs it. This page says how
+the pieces fit, so you know where a change belongs.
 
 ## The pieces
 
-- **AI Studio Lot TUI (`studiolot`)** — the dashboard. It manages projects,
-  applications, presets, the generation queue, and sync. It decides *what* to
-  run and composes the configuration for each run.
-- **Generators (`image-generator`, `video-generator`)** — the generation scripts.
-  Image Generator makes images; Video Generator makes video. A Generator parses
-  the inputs, loads an Engine, runs the generation, and writes the results and
-  logs.
-- **Engines (`engine-*`)** — thin, uniform wrappers around one provider's SDK
-  each. They hold the provider-specific logic and endpoint metadata.
-- **Extensions** — community apps, in-process plugins, and utilities, built from
-  the `extension-starter-*` templates.
+- **Helmer** — the desktop app. It manages projects, presets and the queue,
+  decides *what* to run, and composes the profile for each run. It bundles the
+  Transceiver.
+- **Helmer Transceiver (`~/MISC/helmer-transceiver`)** — runs the Generators for
+  Helmer with `--profile --input_dir --output_dir` (the mode the code calls
+  `_run_studiolot()`). Its `hhc/engines.py` is the canonical Engine loader;
+  `src/engine_loader.py` is the vendored loader half. It links the Generator's
+  `ENGINES/` to the project's `.00_TOOLS/GENERATORS/ENGINES`.
+- **Video Generator (this repo)** — parses Markdown job files, loads an Engine,
+  runs the generation, writes videos and logs.
+- **Engines (`engine-*`)** — one provider's SDK each, plus endpoint TOML files
+  describing each model's parameters and settings.
 
-> **The core contract: the Generator orchestrates, the Engine executes, the
-> profile configures.** A Generator never imports a provider SDK directly — it
-> calls the Engine. That is what lets new models and providers drop in without
-> touching the generation scripts.
+> **The Generator orchestrates, the Engine executes, the profile configures.**
+> The Generator never imports a provider SDK; it calls the Engine.
 
-## The data model
-
-### Markdown files
-
-A job is a Markdown file. One format everywhere:
+## One run
 
 ```
-Line 1:  the prompt
-Line 2+: ![](url-to-an-image-or-video)
-[optional] duration: 5
-[optional] ![slot](url)     # alt text names a payload slot
+main_verbose → read profile → read Markdown files → preflight (--dry-run /
+--cost-estimation) → API key → load Engine → engine.run(inputs) → videos + logs
 ```
 
-The media type follows the URL — an `.mp4`/`.mov` URL makes the Markdown file video.
-That is why a video model can be used from the same input format with no
-special casing.
+`src/main_verbose.py` routes; `src/processing/` parses and validates;
+`src/engine_helpers.py` builds the `InputFile`s (metadata `duration`, `fps`,
+`relative_dir`) and finds Engines; `src/auth/` resolves the API key.
 
-### The sidecar
+## The Markdown job file
 
-Every generated image or video gets a matching `.md` sidecar holding its public
-URL. The sidecar *is* the next Markdown file — syncing creates Markdown files, so there is no
-separate "make a Markdown file" step.
+Parsed by `src/processing/markdown_parser.py` and
+`src/processing/setting_blocks.py`:
 
-### Copy forward, keep everything
+````
+---
+optional front matter on line 1
+---
+```prompt
+the prompt
+```
 
-Generated files are never moved or deleted. Keepers are **copied** forward into
-the next stage; the output archive keeps growing, newest first. Any keeper can
-re-enter any input list, so the pipeline is iterative rather than linear.
+![](url-to-a-first-frame-image)
+![ref](url-to-a-reference-image)
 
-## Profiles and endpoints
+duration: 5
 
-A **profile** is the configuration for one run: platform, endpoint, parameters,
-prompt prefix/suffix, and paths. When you generate from the TUI, the profile is
-*composed* for you from the application instance plus the selected prompt
-preset. Run a Generator standalone and it reads a profile from its own
-`USER-FILES/03.PROFILES/` folder instead.
+```aspect_ratio
+16:9
+```
+````
 
-**Endpoint definitions** (the catalog of models and their parameters) live in
-the Engine repos as TOML files. Adding a model is usually a single TOML file —
-one of the highest-impact contributions you can make.
+- Front matter on line 1 is skipped whole.
+- The prompt is the first plain line, or a ```` ```prompt ```` fence.
+- `![alt](url)` images route by alt text: primary slot, reference images, or a
+  slot the profile declares; anything else rejects the file.
+- `duration:` (or a ```` ```duration ```` fence) is clamped into the profile's
+  bounds; tokens like `auto` pass through.
+- Setting blocks (```` ```aspect_ratio ````, ```` ```resolution ````,
+  ```` ```audio ````) are accepted only when the model's endpoint file in the
+  Engine declares that setting; otherwise the file is rejected before any call.
+
+## Profiles
+
+A profile is the configuration for one run: platform, endpoint, parameters,
+prompt prefix/suffix, slots, duration bounds, paths. Helmer composes it per
+run; standalone, the Generator reads one from `USER-FILES/03.PROFILES/`. A
+composed profile's `reference_images` are appended after each file's own
+references.
 
 ## Where your change belongs
 
-| Change | Repo / area |
+| Change | Where |
 |---|---|
-| TUI behaviour, project model, sync, queue | `studiolot` (`console/`, `pipeline/`) |
-| A new model endpoint or provider parameter | the relevant `engine-*` repo (TOML catalog) |
-| Provider SDK logic, auth, request shaping | the relevant `engine-*` repo (Engine code) |
-| Generation behaviour for images | `image-generator` |
-| Generation behaviour for video | `video-generator` |
-| A community app, plugin, or utility | start from `extension-starter-*` |
-
-Interface changes follow one rule: **`engine-replicate` is the reference.** A
-change to the Engine interface lands there first, is proven by its tests, and is
-then rolled out to the other Engines.
+| App behaviour, projects, queue | Helmer |
+| Running Generators, the Engine loader | `helmer-transceiver` |
+| A new model or provider parameter | the `engine-*` repo (endpoint TOML) |
+| Provider SDK logic, auth, request shaping | the `engine-*` repo |
+| Video job parsing, profiles, run output | this repo |

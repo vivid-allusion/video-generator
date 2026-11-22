@@ -1,137 +1,110 @@
-# Vivid Allusion Video Generator
+# Video Generator
 
-Generate videos from a **single start image** plus a motion prompt using the Replicate API. Supports prompt prefix/suffix modifications and multiple terminal output modes.
+Generates video from Markdown job files: a prompt, optional image links and
+settings, run against a provider's model through an Engine. It is one of the
+Generators Helmer (a desktop app for making films with AI) runs through the
+Helmer Transceiver, and it also runs on its own from a terminal.
 
-## Prerequisites
-
-- Python 3.10+
-- [Replicate](https://replicate.com) API key (set via `REPLICATE_API_TOKEN` env var or 1Password)
-- (Optional) [1Password CLI](https://developer.1password.com/docs/cli/) — for retrieving API tokens from 1Password vaults
+Platforms (`SUPPORTED_PLATFORMS` in `src/auth/__init__.py`): `replicate`, `fal`,
+`openrouter`, `google`, `beeble`, `evolink`, `spicyapi`, `openai`, `bytedance`,
+`higgsfield`, `oxen`. Each platform is an Engine (`engine-<platform>`) that the
+Generator loads; the API key comes from the platform's environment variable
+(e.g. `REPLICATE_API_TOKEN`, `FAL_KEY`), `pass`, or the repo-root `.env`.
 
 ## Setup
+
+Python 3.10+. `run.py` finds or creates the virtual environment, installs
+`requirements.txt` (python-dotenv, loguru, PyYAML, rich) and starts
+`src.main_verbose`:
+
+```bash
+python run.py
+```
+
+Or by hand:
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-```
-
-## Input Format
-
-Place `.md` files in `USER-FILES/04.INPUT/`. Each file must contain **3 lines**:
-
-```
-A cinematic tracking shot through a forest
-120
-![image](https://example.com/my_image.jpg)
-```
-
-| Line | Field | Description |
-|------|-------|-------------|
-| 1 | prompt | Motion description (free text) |
-| 2 | num_frames | Number of frames (positive integer) |
-| 3 | image_url | Image URL in markdown `![alt](url)` format |
-
-The 3rd line **must** use markdown image syntax — raw URLs are not accepted.
-
-## Usage
-
-Three entry points provide different terminal output styles:
-
-```bash
-# Basic mode (simple progress bar)
-python -m src.main
-
-# Verbose mode (Rich console output with emoji indicators)
 python -m src.main_verbose
-
-# Hybrid mode (alive-progress WAVES animation + Rich logging)
-python -m src.main_hybrid
 ```
 
-The `run.py` script launches `src.main_verbose` by default:
+Engines vendor their own SDKs. Where they are found: next to the Generator in
+`ENGINES/` (`engine-<platform>/`), or pip-installed. In a Helmer project the
+Transceiver links that `ENGINES/` to `<project>/.00_TOOLS/GENERATORS/ENGINES`.
+On first run the Generator offers to install the Engine you need.
+
+## The Markdown job file
+
+Put `.md` files in `USER-FILES/04.INPUT/`. One file is one video.
+
+````
+---
+optional front matter on line 1 — skipped whole
+---
+```prompt
+A cinematic tracking shot through a forest.
+Mist, low sun.
+```
+
+![](https://example.com/first-frame.jpg)
+![ref](https://example.com/reference.jpg)
+
+duration: 5
+
+```aspect_ratio
+16:9
+```
+
+```resolution
+720p
+```
+
+```audio
+on
+```
+````
+
+- **Front matter** — a `---` block starting on line 1 is skipped whole.
+- **Prompt** — a plain first line, or a ```` ```prompt ```` fence (every line up
+  to the closing fence, newlines kept).
+- **Images** — `![alt](url)` links. An empty alt, `img`, or the profile's primary
+  slot name feeds the primary input (first frame); `ref`, `reference_images` and
+  `reference_image_urls` feed the model's reference-image slot; any other alt
+  must be a slot the profile declares under `slots:`, else the file is rejected.
+  A primary image cannot be mixed with reference images.
+- **Duration** — `duration: <value>` on a plain line, or a ```` ```duration ````
+  fence. Numbers clamp into the profile's `duration_min`/`duration_max`; tokens
+  such as `auto` pass through. (`frames: N` still works, converted via fps.)
+- **Setting blocks** — ```` ```aspect_ratio ````, ```` ```resolution ````,
+  ```` ```audio ```` (first non-empty line is the value). A block is accepted
+  only if the model's endpoint file in the Engine has that setting (and, for a
+  list setting, that option); otherwise the file is rejected before any call.
+  See `src/processing/setting_blocks.py`.
+- `<!-- comments -->` are ignored. The parser is `src/processing/markdown_parser.py`.
+
+## Profiles
+
+A YAML profile in `USER-FILES/03.PROFILES/` says what to run: `platform`,
+`endpoint`, `parameters` (`fps`, `duration`), `prompt_prefix`, `prompt_suffix`,
+`pricing`, `paths`, and the slot keys `image_url_param`, `slots:`,
+`duration_min` / `duration_max`. Engines seed examples into `USER-FILES/02.STANDBY/`;
+copy one into `03.PROFILES/` to use it.
+
+## Running
 
 ```bash
-./run.py
+python run.py                       # standalone: 03.PROFILES → 04.INPUT → 05.OUTPUT
+python run.py --dry-run             # validate, no calls
+python run.py --cost-estimation     # estimate the cost, no calls
+python -m src.main_verbose --profile P.yaml --input_dir IN --output_dir OUT   # as the Transceiver runs it
 ```
 
-### Cost Estimation (dry run)
-
-```bash
-python -m src.estimate_costs
-```
-
-## Prompt Prefix/Suffix
-
-Profiles can automatically prepend/append text to every prompt:
-
-```yaml
-prompt_prefix: "Cinematic style:"
-prompt_suffix: "Shot on ARRI Alexa, 4K resolution"
-```
-
-If both are configured, the final prompt becomes: `{prefix} {original} {suffix}`.
-
-## Output
-
-Output is written to a timestamped directory in `USER-FILES/05.OUTPUT/`:
-
-```
-video_YYMMDD_HHMMSS.mp4          — Generated video
-video_YYMMDD_HHMMSS_payload.json — API request/response
-video_YYMMDD_HHMMSS_report.md    — Per-video report
-video_YYMMDD_HHMMSS.log          — Generation log
-```
-
-Run-level reports (`SUCCESS.md`, `cost_report.md`, `ADJUSTMENTS.md`) are also generated.
-
-## Profile Configuration
-
-Create a YAML profile in `USER-FILES/03.PROFILES/`:
-
-```yaml
-project: "MY PROJECT"
-paths:
-  input: "/custom/input/path"
-  output: "/custom/output/path"
-
-prompt_suffix: " cinematic quality, smooth motion"
-
-Model:
-  endpoint: provider/model-name:version
-  code-nickname: my-model
-
-pricing:
-  cost_per_second: 0.01
-
-duration_type: seconds
-fps: 24
-duration_min: 5
-duration_max: 10
-duration_param_name: duration
-
-params:
-  aspect_ratio: "16:9"
-```
-
-### Custom Paths
-
-- `paths.input` — Override the default input directory (default: `USER-FILES/04.INPUT/`)
-- `paths.output` — Override the default output directory (default: `USER-FILES/05.OUTPUT/`)
-- Paths are validated at startup — non-existent paths cause immediate failure
-
-Exactly one profile must be active when running.
-
-## Dependencies
-
-- `replicate` — Replicate API client
-- `loguru` — Logging
-- `rich` — Rich console output (verbose/hybrid modes)
-- `alive-progress` — Animated progress bars (hybrid mode)
-- `natsort` — Natural sorting
-- `pyyaml` — YAML parsing
-- `requests` — HTTP downloads
+Output goes to `USER-FILES/05.OUTPUT/<YYMMDD_HHMMSS>_VID/`: each video with a
+`.log` beside it, and on any failure a per-item `_ERROR.log` plus a run-level
+`<YYMMDD_HHMMSS>_ERROR.log`.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) to get involved, and [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the projects fit together.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md).

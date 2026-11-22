@@ -100,6 +100,8 @@
 - Cross-repo commit model: the M1–M3 halves commit in studiolot, the M4 code +
   plan/docs in VG (this repo). Gates: VG 91 passed + ruff clean; studiolot 2039
   passed / 24 skipped + ruff clean.
+- Milestones: M1 `ac87c70`, M2 `705a128`, M3 `8dc5045`, M4 `2592c2e`; M5 gates
+  both repos green; M6 `a18309d` recorded this entry and refreshed CONTRIBUTING.
 - Closure: `~/PLATFORM/theia-platform/docs/handoffs/W98-mc-camera-presets-closure.md`.
 - Stale prose: `CONTRIBUTING.md`'s preset-schema paragraph (the old four-field
   shape) was refreshed to the W95 six-field schema, and was corrected to say the

@@ -81,14 +81,16 @@ prompts + image URLs + optional frame counts), loads an Engine, and calls
 GENERATOR_CONTRACT.md §4d.
 
 ### Engine Loading
-- `src/engine_loader.py` — canonical `load_engine()` implementation, vendored
-  from studiolot. Mirrors IG's loader exactly.
-- Searches `search_paths` for `engine-<platform>/` directories
-- Local clones take precedence over pip-installed packages (GENERATOR_CONTRACT §2b)
-- Corrupted local engine falls back to pip-installed package
+- `src/engine_loader.py` — the loader half of the canonical Engine loader
+  `~/MISC/helmer-transceiver/hhc/engines.py`, vendored. Mirrors IG's loader exactly.
+- Where Engines are found: `find_project_engines_dir` in `src/engine_helpers.py`
+  walks up from `--output_dir` only for a legacy `00_APPLICATIONS/ENGINES` (not `.00_TOOLS/GENERATORS/ENGINES`),
+  then falls back to the Generator's own `ENGINES/`. In a Helmer project the Transceiver
+  (`ensure_engines_link` in `hhc/generator.py`) links that `ENGINES/` to
+  `<project>/.00_TOOLS/GENERATORS/ENGINES`.
 
 ### Supported Platforms
-`replicate`, `fal`, `openrouter`, `google`, `beeble`, `evolink`, `spicyapi` — new engines added by installing the
+`replicate`, `fal`, `openrouter`, `google`, `beeble`, `evolink`, `spicyapi`, `openai`, `bytedance`, `higgsfield`, `oxen` (`SUPPORTED_PLATFORMS` in `src/auth/__init__.py`) — new engines added by installing the
 corresponding package.
 
 ### Processing Flow
@@ -111,7 +113,7 @@ main() → _run_standalone()
   → _execute_pipeline()           # build inputs → run → report → per-file .log
 ```
 
-Studiolot mode:
+Transceiver mode (`--profile --input_dir --output_dir`, as Helmer's Transceiver runs it; the code calls it `_run_studiolot()`):
 ```
 main() → _run_studiolot()
   → load_profile_studiolot()      # from --profile path
@@ -173,9 +175,10 @@ writes a run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log` via
 1. **Standalone mode** (no `--profile`/`--input_dir`/`--output_dir`): reads profile
    from `USER-FILES/03.PROFILES/` (fallback `02.STANDBY/`), inputs from
    `USER-FILES/04.INPUT/`, outputs to `USER-FILES/05.OUTPUT/`
-2. **Studiolot mode** (with `--profile --input_dir --output_dir`): explicit paths
-   for all three, discovers Engine via `00_APPLICATIONS/ENGINES/` walking up from
-   output_dir
+2. **Transceiver mode** (with `--profile --input_dir --output_dir`, the mode
+   Helmer's Transceiver uses; `_run_studiolot()` in code): explicit paths for all
+   three; Engines from `.00_TOOLS/GENERATORS/ENGINES` (linked as the Generator's
+   `ENGINES/`), see Engine Loading
 
 ---
 
@@ -195,7 +198,7 @@ writes a run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log` via
 | `src/auth/__init__.py` | 4-tier `get_api_key()` (env → pass → .env → AuthenticationError), `SUPPORTED_PLATFORMS`, interactive wizard (`_prompt_platform`, `_offer_engine_install`, `_prompt_and_save_key` → repo-root `.env`) |
 | `src/auth/env.py` | `.env` loading (`get_api_token_from_env`) |
 | `src/processing/markdown_parser.py` | `read_markdown()`, `parse_markdown()`, `validate_image_urls()` — prompt (plain line or ```prompt fence) + URLs (`img`/`ref` alt aliases) + `frames:` + `duration:` (or ```duration fence; parsed raw, clamped at build time) + alt-text named slots + `declared_slots` validation, primary/`reference_images` mix rejection, `[]` on empty dir, markdown format warnings, HEAD validation skipped on dry-run (Q15) |
-| `src/processing/profiles.py` | `load_profile_standalone()` (no STANDBY fallback), `load_profile_studiolot()`, `normalize_legacy_profile()` (`image_url` → `image_url_param`), `activate_profile()` |
+| `src/processing/profiles.py` | `load_profile_standalone()` (no STANDBY fallback), `load_profile_studiolot()` (Transceiver mode), `normalize_legacy_profile()` (`image_url` → `image_url_param`), `activate_profile()` |
 | `src/processing/first_run.py` | `handle_first_run()` — engine check, TTY wizard, auto-install, STANDBY seed; never touches 03.PROFILES/ (Q2 removed), non-TTY guidance |
 | `src/utils/logging.py` | loguru + `_TeeStream` capture (encoding is a property) + `write_run_logs()` + `write_error_log()` (run-level `<YYMMDD_HHMMSS>_ERROR.log` on failed runs) |
 | `src/utils/path_resolver.py` | Timestamped output dirs `<YYMMDD_HHMMSS>_VID` (Q14) |
@@ -229,10 +232,10 @@ writes a run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log` via
 
 ## Twin files — agreed vs accepted divergence (W5 M5, 2026-09-30)
 
-W5 phase_5 settled the studiolot/IG/VG twin set. Each row names the file, the
+W5 phase_5 settled the IG/VG twin set. Each row names the file, the
 verdict, and — for a divergence — the one-line reason. **accepted divergence**
 is deliberate: do not "fix" such a file back to the other Generator's copy. The
-canonical Engine loader is `~/MISC/studiolot/hc/engines.py`.
+canonical Engine loader is `~/MISC/helmer-transceiver/hhc/engines.py`.
 
 | File | Verdict | Reason |
 |---|---|---|
@@ -254,17 +257,6 @@ canonical Engine loader is `~/MISC/studiolot/hc/engines.py`.
 | `src/main_verbose.py` | **slated — kept** by Owner ruling Q3 (2026-09-30) | VG's live entry point (`pyproject.toml` console script, `run.py` target, a test import) — not dead code; no removal, no rename. |
 
 ---
-
-## W98 camera presets — loop session notes
-
-- 2026-10-01 · W98 (cross-repo; M1–M3 studiolot, M4–M6 VG) — COMPLETE:
-  M1 `ac87c70` six video presets + `presets.order` 18→24, words-only;
-  M2 `705a128` default/scaffold suites → 24, per-media scoped not relaxed;
-  M3 `8dc5045` durable schema lock (`test_preset_reference_media.py`);
-  M4 `2592c2e` VG `build_inputs` merges profile `reference_images` (declared
-  slot else `reference_urls`; `ConfigurationError` when unroutable);
-  M5 gates both repos green (VG 91, studiolot 2039/24, ruff clean);
-  M6 `a18309d` records the outcome in `docs/HISTORY.md` + refreshes CONTRIBUTING.
 
 ## History
 

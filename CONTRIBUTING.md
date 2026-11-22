@@ -1,133 +1,51 @@
 # Contributing
 
-Thanks for considering a contribution. The projects under the `vivid-allusion`
-org — **AI Studio Lot (`studiolot`)**, **Image Generator**, **Video Generator**,
-and the **`engine-*`** wrappers — are free, open source, and built in the open.
-Issues, pull requests, and documentation improvements are all welcome.
-
-The highest-impact contribution right now is **model endpoints**: adding a new
-or niche model is often a single TOML file.
-
-## Before you start
-
-Read [`ARCHITECTURE.md`](ARCHITECTURE.md) so you know where your change belongs.
-The short version: the TUI decides *what* to run, Generators do the generation,
-and Engines talk to providers.
+Thanks for considering a contribution to the Video Generator, one of the
+Generators Helmer runs through its Transceiver. Read
+[`ARCHITECTURE.md`](ARCHITECTURE.md) first so you know where a change belongs.
 
 ## Setup
 
-Each repo is a normal Python project. For **studiolot** (AI Studio Lot):
+Python 3.10+ and a virtual environment:
 
 ```bash
-git clone https://github.com/vivid-allusion/studiolot
-cd studiolot
-pip install -e .        # Python 3.11+
-studiolot               # launches the TUI (first run onboards you)
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-For the Generators and Engines, clone the repo you're changing and install its
-requirements (each repo's `README.md` has the specifics). The `run.py`
-bootstrap in each Generator creates and repairs its own virtual environment, so
-`python run.py` works from a clean checkout.
+`python run.py` creates or repairs the venv itself, so it also works from a
+clean checkout.
 
 ## Tests
 
-Run the suite for the repo you touch before opening a PR.
-
-**studiolot (Python):**
-
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest tests/ -v
+python -m pytest tests -q
 ```
 
-**Generators (Python):**
-
-```bash
-python -m pytest tests/ -v
-```
-
-**studiolot (JavaScript installers):**
-
-```bash
-node --test deploy/tests/test_*.mjs
-```
-
-Tests are designed to be fast and hermetic — they use temporary directories and
-never make real network calls or need API keys. If a test you added requires a
-full environment, mark it `integration` so it can be skipped.
+Tests are fast and hermetic: temporary directories, no network, no API keys.
+Run the suite before every commit, and add or update a test for what you change.
 
 ## Conventions
 
-- **Python:** PEP 8. `ruff` for linting, `mypy` for types (studiolot); `black` +
-  `ruff` (Generators). Type hints on function signatures, `pathlib.Path` for file
-  work.
-- **Keep files focused.** Split before a file sprawls; small, cohesive modules
-  beat clever ones.
-- **Fail loud.** Don't silently change a user's intent — reject or surface the
-  problem.
-- **TOML:** model endpoint definitions (see below). `YAML`: pipeline config
-  only. `Markdown`: follow the project's docs style.
-- **Conventional commits:**
+- Python: type hints on function signatures, `pathlib.Path` for files, functions
+  under ~50 lines, `black` and `ruff`.
+- Fail loud: reject or report a problem rather than silently changing the
+  user's intent.
+- Never write into `USER-FILES/04.INPUT/`; outputs go to `USER-FILES/05.OUTPUT/`.
+- Conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`), one
+  concern per pull request.
 
-  ```
-  feat: add describe tool integration
-  fix: handle B2 upload timeout gracefully
-  docs: explain the merge rule for underscore folders
-  chore: bump Textual to 0.52.0
-  style: format pipeline.yaml comments
-  refactor: extract profile resolution into a shared module
-  ```
+## Model endpoints
 
-## Pull request flow
-
-1. Fork the repo and branch: `feat/my-change` or `fix/my-fix`.
-2. Make one focused change. Follow the conventions above.
-3. Add or update tests for the affected module. Run the full suite.
-4. Commit with a conventional message.
-5. Open a PR against `main`.
-
-**One concern per PR.** A PR that adds a model endpoint should not also refactor
-the parser — small, atomic PRs are reviewed faster and safer.
-
-## Adding a model endpoint
-
-Endpoints live in the relevant **Engine** repo as TOML files.
-
-1. Create a `.toml` file in the Engine's endpoint catalog.
-2. Fill in the required fields: `id`, `label`, `category`, `platform`,
-   `endpoint`, `description`.
-3. Add a `[pricing]` section and a `[params.<name>]` section per parameter
-   (`type`, `default`, valid `options`).
-4. Verify it appears in the model selector, then open a PR with the single
-   `.toml` file.
-
-Only use model IDs that appear in the provider's own documentation — don't guess
-IDs. An Engine's endpoint catalog must mirror the provider's real API.
-
-## Prompt presets
-
-Presets are `.preset` files (TOML syntax) authored and shipped by **studiolot**;
-the Generator repos carry no preset code. A preset holds `name`, `media_type`
-(`image` / `video` / `text`), `description`, `reference_media`, `prefix`, and
-`suffix` (the W95 schema). It deliberately carries no model, parameters, or
-paths, so a preset outlives the models it was written against. `description` is
-author-facing only; `reference_media` composes to the profile's
-`reference_images`.
+Model endpoints live in the Engine repos (`engine-*`) as TOML files, not here.
 
 ## Reporting bugs
 
-Open a GitHub issue with:
-
-1. **What you did** — exact steps, including any options selected.
-2. **What you expected** — what should have happened.
-3. **What happened** — error messages, unexpected behaviour, screenshots.
-4. **Environment** — OS, Python version, terminal emulator.
-
-For generation bugs, include the Markdown file content, the error shown, and the model
-and endpoint used. For TUI bugs, a terminal recording helps a lot.
+Open an issue with the steps, what you expected, what happened (the
+`_ERROR.log` from the output folder helps), and your OS and Python version.
+For a generation bug include the Markdown file, the profile and the endpoint.
 
 ## License
 
-Each repo carries its own license (see `LICENSE` in the repo). By contributing,
-you agree your contributions are licensed under the same terms.
+See `LICENSE`. Contributions are licensed under the same terms.

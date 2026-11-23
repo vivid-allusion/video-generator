@@ -11,7 +11,7 @@ class TestResolveEngineForStudiolot:
     def test_uses_project_engines_when_present(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        project = tmp_path / "00_APPLICATIONS" / "ENGINES"
+        project = tmp_path / ".00_TOOLS" / "GENERATORS" / "ENGINES"
         captured: dict[str, object] = {}
 
         monkeypatch.setattr(main_verbose, "find_project_engines_dir", lambda _d: project)

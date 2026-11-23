@@ -365,7 +365,7 @@ def _resolve_engine_for_studiolot(
     else:
         search_paths = [find_generator_engines_dir()]
         logger.info(
-            "No 00_APPLICATIONS/ENGINES/ under the output tree — using the "
+            "No .00_TOOLS/GENERATORS/ENGINES/ under the output tree — using the "
             "generator's own ENGINES/"
         )
     return load_engine(

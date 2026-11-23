@@ -84,7 +84,7 @@ GENERATOR_CONTRACT.md §4d.
 - `src/engine_loader.py` — the loader half of the canonical Engine loader
   `~/MISC/helmer-transceiver/hhc/engines.py`, vendored. Mirrors IG's loader exactly.
 - Where Engines are found: `find_project_engines_dir` in `src/engine_helpers.py`
-  walks up from `--output_dir` only for a legacy `00_APPLICATIONS/ENGINES` (not `.00_TOOLS/GENERATORS/ENGINES`),
+  walks up from `--output_dir` for `.00_TOOLS/GENERATORS/ENGINES`,
   then falls back to the Generator's own `ENGINES/`. In a Helmer project the Transceiver
   (`ensure_engines_link` in `hhc/generator.py`) links that `ENGINES/` to
   `<project>/.00_TOOLS/GENERATORS/ENGINES`.

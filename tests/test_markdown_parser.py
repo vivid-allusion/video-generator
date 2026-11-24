@@ -714,3 +714,20 @@ def test_empty_prompt_admitted_when_allowed(tmp_path):
     (tmp_path / "S01_empty.md").write_text("\n")
     result = read_markdown(tmp_path, allow_empty_prompt=True)
     assert [m["prompt"] for m in result] == [""]
+
+
+def test_rejected_file_gets_card_and_fixed_file_loses_it(tmp_path):
+    from PIL import Image
+
+    from src.processing.markdown_parser import read_markdown
+
+    md = tmp_path / "shot.md"
+    md.write_text("A prompt.\n\n![nope](https://x.test/a.jpg)\n")
+    assert read_markdown(tmp_path, dry_run=True, declared_slots=["last"]) == []
+    card = tmp_path / "shot_REJECTED.png"
+    assert Image.open(card).size == (1280, 720)
+    assert read_markdown(tmp_path, dry_run=True, declared_slots=["last"]) == []
+    assert [p.name for p in tmp_path.glob("*.png")] == ["shot_REJECTED.png"]
+    md.write_text("A prompt.\n")
+    assert len(read_markdown(tmp_path, dry_run=True)) == 1
+    assert not card.exists()

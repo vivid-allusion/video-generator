@@ -43,11 +43,13 @@ Format:
 
 import re
 import sys
+import textwrap
 import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+from PIL import Image, ImageDraw, ImageFont
 
 from ..datatypes import Markdown
 from .setting_blocks import block_names, check_settings
@@ -379,6 +381,37 @@ def validate_image_urls(urls: list[str], timeout: float = 5.0) -> tuple[list[str
     return valid, invalid
 
 
+def _card_path(md_path: Path) -> Path:
+    return md_path.with_name(f"{md_path.stem}_REJECTED.png")
+
+
+def _write_rejected_card(md_path: Path, reason: str) -> None:
+    """Red 1280x720 card with the reason beside a rejected file; never raises."""
+    try:
+        width, height = 1280, 720
+        image = Image.new("RGB", (width, height), (200, 0, 0))
+        draw = ImageDraw.Draw(image)
+        font_size = width // 60
+        font = ImageFont.load_default(size=font_size)
+        margin = width // 100
+        y = margin
+        for line in textwrap.wrap(reason, (width - 2 * margin) // (font_size // 2)):
+            if y + font_size > height - margin:
+                break
+            draw.text((margin, y), line, fill=(0, 0, 0), font=font)
+            y += font_size + font_size // 3
+        image.save(_card_path(md_path))
+    except Exception as exc:
+        logger.error(f"Could not write rejection card for {md_path.name}: {exc}")
+
+
+def _clear_rejected_card(md_path: Path) -> None:
+    try:
+        _card_path(md_path).unlink(missing_ok=True)
+    except OSError as exc:
+        logger.error(f"Could not remove rejection card for {md_path.name}: {exc}")
+
+
 def read_markdown(
     input_dir: Path,
     dry_run: bool = False,
@@ -424,6 +457,7 @@ def read_markdown(
             settings = check_settings(blocks, model[0]) if blocks and model else {}
         except ValueError as e:
             logger.error(f"Rejected {md_path.name}: {e}")
+            _write_rejected_card(md_path, str(e))
             rejected += 1
             continue
 
@@ -436,13 +470,16 @@ def read_markdown(
                 if invalid:
                     for url in invalid:
                         logger.error(f"Unreachable media URL in {md_path.name}: {url}")
-                    logger.error(
-                        f"Rejected {md_path.name}: {len(invalid)} of {len(all_urls)} "
+                    reason = (
+                        f"{len(invalid)} of {len(all_urls)} "
                         "media URL(s) unreachable — fix the URL or remove the line"
                     )
+                    logger.error(f"Rejected {md_path.name}: {reason}")
+                    _write_rejected_card(md_path, reason)
                     rejected += 1
                     continue
 
+        _clear_rejected_card(md_path)
         result.append(
             {
                 "path": md_path,

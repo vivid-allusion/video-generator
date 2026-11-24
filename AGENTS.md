@@ -149,6 +149,8 @@ writes a run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log` via
   `ref`, `reference_images` and `reference_image_urls` all mean the row's
   reference-image slot — whichever of `reference_images` (Seedance 2.5) /
   `reference_image_urls` (MiniMax H3) it declares, so one file runs on both;
+  `last_frame` means the row's own last-frame slot (`last_frame_image`, `end_image_url`,
+  `tail_image_url`, `last_image_url`, `last_frame`, `end_image`; refused if it has none);
   any other alt that is not a declared slot rejects the file (names the alt and
   the declared slots); two or more primary pictures reject it too (the primary
   input takes one); a declared named alt

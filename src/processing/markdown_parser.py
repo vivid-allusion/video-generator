@@ -88,7 +88,15 @@ _PRIMARY_ALIASES = {"video", "image", "source", "media", "src", "input", "img"}
 # `ref`, `reference_images` and `reference_image_urls` all mean the row's
 # reference-picture slot (Seedance 2.5 / MiniMax H3 / Oxen input_images); first declared wins.
 _REF_SLOT_NAMES = ("reference_images", "reference_image_urls", "input_images")
-_SLOT_ALIASES = {"ref": _REF_SLOT_NAMES, **{n: _REF_SLOT_NAMES for n in _REF_SLOT_NAMES}}
+# `last_frame` means whichever last-frame slot the row declares; first declared wins.
+_LAST_SLOT_NAMES = (
+    "last_frame_image", "end_image_url", "tail_image_url", "last_image_url", "last_frame", "end_image",
+)
+_SLOT_ALIASES = {
+    "ref": _REF_SLOT_NAMES,
+    **{n: _REF_SLOT_NAMES for n in _REF_SLOT_NAMES},
+    "last_frame": _LAST_SLOT_NAMES,
+}
 
 
 def _strip_front_matter(content: str) -> str:
@@ -240,6 +248,8 @@ def _route_image(
     if slot in declared_slots:
         references.setdefault(slot, []).append(url)
         return
+    if alt == "last_frame":
+        raise ValueError("This model has no last frame — remove the ![last_frame] line")
     raise ValueError(
         f"Unknown image alt '{alt}' — this row declares slots {declared_slots}; "
         f"use one of them, ref, or an empty alt for the primary input '{primary_slot}'"
@@ -345,10 +355,11 @@ def parse_markdown(
         raise ValueError("No prompt text found in markdown")
 
     if declared_slots is not None and len(urls) > 1:
-        raise ValueError(
-            f"{len(urls)} primary pictures found but the primary input "
-            f"'{primary_slot}' takes one — keep one or route the rest to a declared slot"
-        )
+        if any(n in declared_slots for n in _LAST_SLOT_NAMES):
+            hint = f"the model takes one start picture ('{primary_slot}'); write a last frame as ![last_frame](...)"
+        else:
+            hint = "this model has no last frame, keep one picture"
+        raise ValueError(f"{len(urls)} pictures found but {hint}")
 
     if urls and any(references.get(name) for name in _REF_SLOT_NAMES):
         raise ValueError(

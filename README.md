@@ -71,7 +71,8 @@ on
   to the closing fence, newlines kept).
 - **Images** — `![alt](url)` links. An empty alt, `img`, or the profile's primary
   slot name feeds the primary input (first frame); `ref`, `reference_images` and
-  `reference_image_urls` feed the model's reference-image slot; any other alt
+  `reference_image_urls` feed the model's reference-image slot; `last_frame` feeds
+  the model's own last-frame slot (refused if it has none); any other alt
   must be a slot the profile declares under `slots:`, else the file is rejected.
   A primary image cannot be mixed with reference images.
 - **Duration** — `duration: <value>` on a plain line, or a ```` ```duration ````

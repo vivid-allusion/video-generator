@@ -731,3 +731,31 @@ def test_rejected_file_gets_card_and_fixed_file_loses_it(tmp_path):
     md.write_text("A prompt.\n")
     assert len(read_markdown(tmp_path, dry_run=True)) == 1
     assert not card.exists()
+
+
+_TWO = "A prompt\n![](http://a/1.jpg)\n![last_frame](http://a/2.jpg)\n"
+
+
+@pytest.mark.parametrize(
+    "slot",
+    ["last_frame_image", "end_image_url", "tail_image_url", "last_image_url", "last_frame", "end_image"],
+)
+def test_last_frame_alt_routes_to_the_rows_own_slot(slot):
+    _, urls, _, _, refs = parse_markdown(_TWO, declared_slots=[slot], primary_slot="image")
+    assert urls == ["http://a/1.jpg"]
+    assert refs == {slot: ["http://a/2.jpg"]}
+
+
+def test_two_plain_pictures_say_how_to_give_a_last_frame():
+    content = "A prompt\n![](http://a/1.jpg)\n![](http://a/2.jpg)\n"
+    with pytest.raises(ValueError, match=r"!\[last_frame\]"):
+        parse_markdown(content, declared_slots=["end_image"], primary_slot="image")
+
+
+def test_no_last_frame_row_refuses_two_pictures_and_last_frame_line():
+    content = "A prompt\n![](http://a/1.jpg)\n![](http://a/2.jpg)\n"
+    with pytest.raises(ValueError, match="no last frame") as e:
+        parse_markdown(content, declared_slots=["reference_images"], primary_slot="image")
+    assert "declared slot" not in str(e.value)
+    with pytest.raises(ValueError, match="no last frame"):
+        parse_markdown(_TWO, declared_slots=["reference_images"], primary_slot="image")

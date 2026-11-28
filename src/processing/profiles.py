@@ -1,4 +1,4 @@
-"""Profile loading — standalone and studiolot modes."""
+"""Profile loading — standalone and project modes."""
 
 import shutil
 from pathlib import Path
@@ -87,7 +87,7 @@ def load_profile_standalone() -> dict[str, Any]:
     return data
 
 
-def load_profile_studiolot(profile_path: Path) -> dict[str, Any]:
+def load_profile_project(profile_path: Path) -> dict[str, Any]:
     """Load profile YAML from --profile flag."""
     if not profile_path.exists():
         raise ConfigurationError(f"Profile not found: {profile_path}")

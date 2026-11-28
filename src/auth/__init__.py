@@ -2,7 +2,7 @@
 
 Priority:
     1. Already-set env var (injected by OpenReel TUI or cloud wrapper)
-    2. pass show studiolot/<key> (GPG-encrypted, optional)
+    2. pass show helmer/<key> (GPG-encrypted, optional)
     3. .env file in project root (standalone mode)
     4. Hard exit if no key found
 """
@@ -32,7 +32,7 @@ _PLATFORM_KEY_MAP: dict[str, str] = {
     "oxen": "OXEN_API_KEY",
 }
 
-PASS_STORE_PREFIX: str = "studiolot/"
+PASS_STORE_PREFIX: str = "helmer/"
 
 SUPPORTED_PLATFORMS: list[str] = list(_PLATFORM_KEY_MAP.keys())
 

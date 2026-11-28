@@ -11,7 +11,7 @@ the pieces fit, so you know where a change belongs.
   Transceiver.
 - **Helmer Transceiver (`~/MISC/helmer-transceiver`)** — runs the Generators for
   Helmer with `--profile --input_dir --output_dir` (the mode the code calls
-  `_run_studiolot()`). Its `hhc/engines.py` is the canonical Engine loader;
+  `_run_project()`). Its `hhc/engines.py` is the canonical Engine loader;
   `src/engine_loader.py` is the vendored loader half. It links the Generator's
   `ENGINES/` to the project's `.00_TOOLS/GENERATORS/ENGINES`.
 - **Video Generator (this repo)** — parses Markdown job files, loads an Engine,

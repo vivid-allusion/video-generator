@@ -259,7 +259,7 @@ def test_cli_defaults_to_saving_payloads(monkeypatch: pytest.MonkeyPatch) -> Non
     assert parse_args().save_payloads is False
 
 
-def test_studiolot_threads_save_payloads_and_keeps_it_out_of_parameters(
+def test_project_threads_save_payloads_and_keeps_it_out_of_parameters(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     captured: dict[str, object] = {}
@@ -272,7 +272,7 @@ def test_studiolot_threads_save_payloads_and_keeps_it_out_of_parameters(
     monkeypatch.setattr(main_verbose, "_execute_pipeline", _recorder)
     monkeypatch.setattr(
         main_verbose,
-        "load_profile_studiolot",
+        "load_profile_project",
         lambda _path: _profile(parameters={"fps": 24, "save_payloads": True}),
     )
     monkeypatch.setattr(
@@ -280,7 +280,7 @@ def test_studiolot_threads_save_payloads_and_keeps_it_out_of_parameters(
     )
     monkeypatch.setattr(main_verbose, "get_api_key", lambda _platform: "key")
     monkeypatch.setattr(
-        main_verbose, "_resolve_engine_for_studiolot", lambda *a, **k: StagingEngine
+        main_verbose, "_resolve_engine_for_project", lambda *a, **k: StagingEngine
     )
 
     args = SimpleNamespace(
@@ -295,6 +295,6 @@ def test_studiolot_threads_save_payloads_and_keeps_it_out_of_parameters(
         logs=False,
     )
 
-    assert main_verbose._run_studiolot(args) == 0
+    assert main_verbose._run_project(args) == 0
     assert captured["save_payloads"] is False
     assert "save_payloads" not in captured["profile"]["parameters"]

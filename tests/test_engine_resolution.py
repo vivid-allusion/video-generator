@@ -1,4 +1,4 @@
-"""Studiolot-mode engine resolution: project tree first, generator fallback."""
+"""Project-mode engine resolution: project tree first, generator fallback."""
 
 from pathlib import Path
 
@@ -7,7 +7,7 @@ import pytest
 from src import main_verbose
 
 
-class TestResolveEngineForStudiolot:
+class TestResolveEngineForProject:
     def test_uses_project_engines_when_present(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -22,7 +22,7 @@ class TestResolveEngineForStudiolot:
 
         monkeypatch.setattr(main_verbose, "load_engine", _recorder)
 
-        result = main_verbose._resolve_engine_for_studiolot(
+        result = main_verbose._resolve_engine_for_project(
             tmp_path, "replicate", {}, "key"
         )
 
@@ -44,7 +44,7 @@ class TestResolveEngineForStudiolot:
 
         monkeypatch.setattr(main_verbose, "load_engine", _recorder)
 
-        result = main_verbose._resolve_engine_for_studiolot(
+        result = main_verbose._resolve_engine_for_project(
             tmp_path, "replicate", {}, "key"
         )
 

@@ -15,7 +15,7 @@
 - MUST: Write a verbose error log on ANY generation failure, regardless of
   logging flags — the engine writes a per-item `<base>-<idx>_ERROR.log`
   beside the would-be output (named on the result as `metadata["error_log"]`);
-  the vehicle writes one run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log`
+  the Generator writes one run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log`
   per failed run (run mode, profile path, input root, counts, per-item
   failures, traceback) — parse/preflight rejections never write one
 - SHOULD: Suggest solutions when errors occur
@@ -113,10 +113,10 @@ main() → _run_standalone()
   → _execute_pipeline()           # build inputs → run → report → per-file .log
 ```
 
-Transceiver mode (`--profile --input_dir --output_dir`, as Helmer's Transceiver runs it; the code calls it `_run_studiolot()`):
+Transceiver mode (`--profile --input_dir --output_dir`, as Helmer's Transceiver runs it; the code calls it `_run_project()`):
 ```
-main() → _run_studiolot()
-  → load_profile_studiolot()      # from --profile path
+main() → _run_project()
+  → load_profile_project()        # from --profile path
   → read_markdown()               # HEAD URL validation skipped under --dry-run
   → _handle_preflight_checks()    # before any output_dir.mkdir (Q16)
   → output_dir.mkdir()            # only after preflight passes
@@ -178,7 +178,7 @@ writes a run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log` via
    from `USER-FILES/03.PROFILES/` (fallback `02.STANDBY/`), inputs from
    `USER-FILES/04.INPUT/`, outputs to `USER-FILES/05.OUTPUT/`
 2. **Transceiver mode** (with `--profile --input_dir --output_dir`, the mode
-   Helmer's Transceiver uses; `_run_studiolot()` in code): explicit paths for all
+   Helmer's Transceiver uses; `_run_project()` in code): explicit paths for all
    three; Engines from `.00_TOOLS/GENERATORS/ENGINES` (linked as the Generator's
    `ENGINES/`), see Engine Loading
 
@@ -200,7 +200,7 @@ writes a run-level `<output_dir>/<YYMMDD_HHMMSS>_ERROR.log` via
 | `src/auth/__init__.py` | 4-tier `get_api_key()` (env → pass → .env → AuthenticationError), `SUPPORTED_PLATFORMS`, interactive wizard (`_prompt_platform`, `_offer_engine_install`, `_prompt_and_save_key` → repo-root `.env`) |
 | `src/auth/env.py` | `.env` loading (`get_api_token_from_env`) |
 | `src/processing/markdown_parser.py` | `read_markdown()`, `parse_markdown()`, `validate_image_urls()` — prompt (plain line or ```prompt fence) + URLs (`img`/`ref` alt aliases) + `frames:` + `duration:` (or ```duration fence; parsed raw, clamped at build time) + alt-text named slots + `declared_slots` validation, primary/`reference_images` mix rejection, `[]` on empty dir, markdown format warnings, HEAD validation skipped on dry-run (Q15) |
-| `src/processing/profiles.py` | `load_profile_standalone()` (no STANDBY fallback), `load_profile_studiolot()` (Transceiver mode), `normalize_legacy_profile()` (`image_url` → `image_url_param`), `activate_profile()` |
+| `src/processing/profiles.py` | `load_profile_standalone()` (no STANDBY fallback), `load_profile_project()` (Transceiver mode), `normalize_legacy_profile()` (`image_url` → `image_url_param`), `activate_profile()` |
 | `src/processing/first_run.py` | `handle_first_run()` — engine check, TTY wizard, auto-install, STANDBY seed; never touches 03.PROFILES/ (Q2 removed), non-TTY guidance |
 | `src/utils/logging.py` | loguru + `_TeeStream` capture (encoding is a property) + `write_run_logs()` + `write_error_log()` (run-level `<YYMMDD_HHMMSS>_ERROR.log` on failed runs) |
 | `src/utils/path_resolver.py` | Timestamped output dirs `<YYMMDD_HHMMSS>_VID` (Q14) |

@@ -1,6 +1,6 @@
 """Video Generator — Engine-based video generation generator.
 
-Both studiolot and standalone modes share the same Engine-based execution.
+Both project and standalone modes share the same Engine-based execution.
 The Generator reads video Markdown files, loads an Engine, and calls engine.run().
 
 Per GENERATOR_CONTRACT.md §4d: InputFile.metadata carries {duration, fps}
@@ -38,8 +38,8 @@ from .processing.landing import run_landed
 from .processing.markdown_parser import read_markdown
 from .processing.payload import payload_text, stamp_saved_file
 from .processing.profiles import (
+    load_profile_project,
     load_profile_standalone,
-    load_profile_studiolot,
     profile_has_prompt_text,
 )
 from .processing.setting_blocks import model_settings
@@ -353,7 +353,7 @@ def _execute_pipeline(
     return exit_code
 
 
-def _resolve_engine_for_studiolot(
+def _resolve_engine_for_project(
     output_dir: Path,
     platform: str,
     profile: dict[str, Any],
@@ -378,8 +378,8 @@ def _resolve_engine_for_studiolot(
 
 def main() -> int:
     args = parse_args()
-    is_studiolot = bool(args.profile or args.input_dir or args.output_dir)
-    run_mode = "studiolot" if is_studiolot else "standalone"
+    is_project = bool(args.profile or args.input_dir or args.output_dir)
+    run_mode = "project" if is_project else "standalone"
     if _logs_enabled(args, run_mode):
         start_output_capture()
     setup_logging(debug=args.debug, verbose=args.verbose)
@@ -389,8 +389,8 @@ def main() -> int:
     logger.debug("=" * 60)
 
     try:
-        if is_studiolot:
-            return _run_studiolot(args)
+        if is_project:
+            return _run_project(args)
         else:
             return _run_standalone(args)
     except KeyboardInterrupt:
@@ -412,16 +412,16 @@ def main() -> int:
 # ── run modes ──────────────────────────────────────────────────────────────────
 
 
-def _run_studiolot(args) -> int:
+def _run_project(args) -> int:
     if not args.output_dir:
-        raise ConfigurationError("--output_dir is required in studiolot mode")
+        raise ConfigurationError("--output_dir is required in project mode")
     if not args.profile:
-        raise ConfigurationError("--profile is required in studiolot mode")
+        raise ConfigurationError("--profile is required in project mode")
 
     output_dir = Path(args.output_dir)
     profile_path = Path(args.profile)
 
-    profile = load_profile_studiolot(profile_path)
+    profile = load_profile_project(profile_path)
     profile = _apply_cli_overrides(profile, args)
     platform = args.platform or profile.get("platform") or DEFAULT_PLATFORM
     profile["platform"] = platform
@@ -448,7 +448,7 @@ def _run_studiolot(args) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     api_key = get_api_key(platform)
-    engine = _resolve_engine_for_studiolot(output_dir, platform, profile, api_key)
+    engine = _resolve_engine_for_project(output_dir, platform, profile, api_key)
 
     return _execute_pipeline(
         markdown_files,
@@ -458,7 +458,7 @@ def _run_studiolot(args) -> int:
         output_dir,
         input_dir,
         logs=False,
-        run_mode="studiolot",
+        run_mode="project",
         save_payloads=getattr(args, "save_payloads", True),
     )
 
@@ -468,7 +468,7 @@ def _run_standalone(args) -> int:
     platform = DEFAULT_PLATFORM
 
     auto_install = args.install_default_engine or os.environ.get(
-        "STUDIOLOT_AUTO_INSTALL_ENGINE"
+        "HELMER_AUTO_INSTALL_ENGINE"
     )
 
     result = handle_first_run(platform, search_paths, args.dry_run, auto_install)

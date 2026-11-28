@@ -22,5 +22,5 @@ def test_falls_back_to_generator_engines(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         main_verbose, "load_engine", lambda ctx: seen.append(ctx.search_paths)
     )
-    main_verbose._resolve_engine_for_studiolot(tmp_path, "fal", {}, None)
+    main_verbose._resolve_engine_for_project(tmp_path, "fal", {}, None)
     assert seen == [[find_generator_engines_dir()]]

@@ -1,7 +1,7 @@
-"""Canonical Engine discovery and loading — vendored from studiolot.
+"""Canonical Engine discovery and loading — vendored from the Transceiver.
 
 Per ENGINE_CONTRACT.md §6/§7a: the canonical implementation of load_engine()
-lives in ~/MISC/studiolot/hc/engines.py. This file is the Generator's
+lives in ~/MISC/helmer-transceiver/hhc/engines.py. This file is the Generator's
 byte-identical snapshot of that module's *loader half* — change the canonical
 first, then re-vendor (verify with a three-way diff).
 

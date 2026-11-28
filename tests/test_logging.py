@@ -1,7 +1,7 @@
 """Tests for opt-in (-l/--logs), standalone-only run logging (W32).
 
 Default runs write no log; a standalone run opts back in with -l/--logs; a
-driven (studiolot-mode) run never writes a log, even with the flag set.
+driven (project-mode) run never writes a log, even with the flag set.
 """
 
 import sys
@@ -146,8 +146,8 @@ class TestLogsFlag:
         [
             (True, "standalone", True),
             (False, "standalone", False),
-            (True, "studiolot", False),
-            (False, "studiolot", False),
+            (True, "project", False),
+            (False, "project", False),
         ],
     )
     def test_logs_enabled_is_standalone_only(
@@ -155,7 +155,7 @@ class TestLogsFlag:
     ) -> None:
         assert _logs_enabled(SimpleNamespace(logs=flag), run_mode) is expected
 
-    def test_run_studiolot_passes_logs_false(
+    def test_run_project_passes_logs_false(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         captured: dict[str, object] = {}
@@ -166,14 +166,14 @@ class TestLogsFlag:
 
         monkeypatch.setattr(main_verbose, "_execute_pipeline", _recorder)
         monkeypatch.setattr(
-            main_verbose, "load_profile_studiolot", lambda _path: _profile()
+            main_verbose, "load_profile_project", lambda _path: _profile()
         )
         monkeypatch.setattr(
             main_verbose, "read_markdown", lambda *a, **k: [_md("in/a.md")]
         )
         monkeypatch.setattr(main_verbose, "get_api_key", lambda _platform: "key")
         monkeypatch.setattr(
-            main_verbose, "_resolve_engine_for_studiolot", lambda *a, **k: StubEngine
+            main_verbose, "_resolve_engine_for_project", lambda *a, **k: StubEngine
         )
 
         args = SimpleNamespace(
@@ -188,7 +188,7 @@ class TestLogsFlag:
             logs=True,
         )
 
-        assert main_verbose._run_studiolot(args) == 0
+        assert main_verbose._run_project(args) == 0
         assert captured["logs"] is False
 
 
@@ -276,7 +276,7 @@ def test_raising_engine_writes_run_level_error_log_and_reraises(
 def test_write_error_log_names_file_with_timestamp(tmp_path: Path) -> None:
     log_path = write_error_log(
         tmp_path,
-        run_mode="studiolot",
+        run_mode="project",
         profile_path="p.yaml",
         input_root=tmp_path,
     )
@@ -292,7 +292,7 @@ def test_preflight_rejection_writes_no_error_log(
 ) -> None:
     """A parse/preflight rejection never reaches a generation attempt."""
     (tmp_path / "rejected.md").write_text("prompt", encoding="utf-8")
-    monkeypatch.setattr(main_verbose, "load_profile_studiolot", lambda _path: _profile())
+    monkeypatch.setattr(main_verbose, "load_profile_project", lambda _path: _profile())
     monkeypatch.setattr(main_verbose, "read_markdown", lambda *a, **k: [])
 
     args = SimpleNamespace(
@@ -308,5 +308,5 @@ def test_preflight_rejection_writes_no_error_log(
     )
 
     with pytest.raises(ValidationError):
-        main_verbose._run_studiolot(args)
+        main_verbose._run_project(args)
     assert list(tmp_path.glob("*_ERROR.log")) == []

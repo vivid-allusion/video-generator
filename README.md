@@ -5,10 +5,9 @@ settings, run against a provider's model through an Engine. It is one of the
 Generators Helmer (a desktop app for making films with AI) runs through the
 Helmer Transceiver, and it also runs on its own from a terminal.
 
-Platforms (`SUPPORTED_PLATFORMS` in `src/auth/__init__.py`): `replicate`, `fal`,
-`openrouter`, `google`, `beeble`, `evolink`, `spicyapi`, `openai`, `bytedance`,
-`higgsfield`, `oxen`. Each platform is an Engine (`engine-<platform>`) that the
-Generator loads; the API key comes from the platform's environment variable
+Platforms are the Engines (`engine-<platform>`) found in the project's
+`.00_TOOLS/GENERATORS/ENGINES` and the Generator's `ENGINES/`; each Engine's
+`metadata.py` names its key. The API key comes from that environment variable
 (e.g. `REPLICATE_API_TOKEN`, `FAL_KEY`), `pass`, or the repo-root `.env`.
 
 ## Setup

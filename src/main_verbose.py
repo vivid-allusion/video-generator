@@ -15,7 +15,7 @@ from typing import Any
 
 from loguru import logger
 
-from .auth import get_api_key, get_api_key_interactive
+from .auth import get_api_key, get_api_key_interactive, load_platforms
 from .cli import parse_args
 from .constants import DEFAULT_PLATFORM, __version__
 from .datatypes import Markdown
@@ -447,6 +447,7 @@ def _run_project(args) -> int:
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    load_platforms(output_dir)
     api_key = get_api_key(platform)
     engine = _resolve_engine_for_project(output_dir, platform, profile, api_key)
 

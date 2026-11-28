@@ -16,29 +16,49 @@ from pathlib import Path
 from loguru import logger
 
 from ..constants import DEFAULT_PLATFORM
-from ..exceptions import AuthenticationError
-
-_PLATFORM_KEY_MAP: dict[str, str] = {
-    "replicate": "REPLICATE_API_TOKEN",
-    "fal": "FAL_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-    "google": "GOOGLE_API_KEY",
-    "beeble": "BEEBLE_API_KEY",
-    "evolink": "EVOLINK_API_KEY",
-    "spicyapi": "SPICY_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "bytedance": "ARK_API_KEY",
-    "higgsfield": "HIGGSFIELD_API_KEY",
-    "oxen": "OXEN_API_KEY",
-}
+from ..engine_helpers import find_generator_engines_dir, find_project_engines_dir
+from ..exceptions import AuthenticationError, ConfigurationError
 
 PASS_STORE_PREFIX: str = "helmer/"
 
-SUPPORTED_PLATFORMS: list[str] = list(_PLATFORM_KEY_MAP.keys())
+SUPPORTED_PLATFORMS: list[str] = []
+_ENGINE_KEYS: dict[str, str] = {}
+
+
+def load_platforms(start_dir: Path) -> None:
+    """Fill SUPPORTED_PLATFORMS and key names from each engine's metadata.py.
+
+    The project above ``start_dir`` comes first; the first engine found wins.
+    """
+    keys: dict[str, str] = {}
+    for root in (find_project_engines_dir(start_dir), find_generator_engines_dir()):
+        if root is None:
+            continue
+        for engine_dir in sorted(root.glob("engine-*")):
+            platform = engine_dir.name.removeprefix("engine-")
+            metadata = engine_dir / f"engine_{platform}" / "metadata.py"
+            if platform in keys or not metadata.is_file():
+                continue
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    f"engine_{platform}_metadata", metadata
+                )
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+            except Exception:
+                continue
+            key = str(getattr(module, "API_KEY_ENV_VAR", "") or "").strip()
+            keys[platform] = key or f"{platform.upper()}_API_KEY"
+    _ENGINE_KEYS.clear()
+    _ENGINE_KEYS.update(keys)
+    SUPPORTED_PLATFORMS[:] = keys
+
+
+load_platforms(Path.cwd())
 
 
 def _key_name(platform: str) -> str:
-    return _PLATFORM_KEY_MAP.get(platform, f"{platform.upper()}_API_KEY")
+    return _ENGINE_KEYS.get(platform, f"{platform.upper()}_API_KEY")
 
 
 def _try_pass(key_name: str) -> str | None:
@@ -89,6 +109,12 @@ def get_api_key(platform: str = DEFAULT_PLATFORM) -> str:
 
 def _prompt_platform() -> str:
     """Prompt user to select a platform from the supported list."""
+    if not SUPPORTED_PLATFORMS:
+        raise ConfigurationError(
+            "No engines found. Clone one, then run again:\n"
+            "  git clone https://github.com/vivid-allusion/engine-<platform>.git "
+            "ENGINES/engine-<platform>/"
+        )
     print("\nAvailable platforms:")
     for i, p in enumerate(SUPPORTED_PLATFORMS, 1):
         print(f"  {i}. {p}")

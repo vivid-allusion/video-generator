@@ -90,8 +90,8 @@ GENERATOR_CONTRACT.md §4d.
   `<project>/.00_TOOLS/GENERATORS/ENGINES`.
 
 ### Supported Platforms
-`replicate`, `fal`, `openrouter`, `google`, `beeble`, `evolink`, `spicyapi`, `openai`, `bytedance`, `higgsfield`, `oxen` (`SUPPORTED_PLATFORMS` in `src/auth/__init__.py`) — new engines added by installing the
-corresponding package.
+`SUPPORTED_PLATFORMS` and each key name (`src/auth/__init__.py`) are read from every engine's `metadata.py` (project's
+`.00_TOOLS/GENERATORS/ENGINES` first, then `ENGINES/`) — a new engine needs no code change here.
 
 ### Processing Flow
 
